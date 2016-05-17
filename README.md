@@ -7,7 +7,7 @@ If you want to experiment locally, you can install `beefy` (`npm install -g beef
 
 You can edit `sample.js` to change the input parameters, or `index.js` to edit the module itself.
 
-Example
+Example (copied from [sample.js](./sample.js))
 ```javascript
 const render = require('react-dom').render
 const h = require('react-hyperscript')
