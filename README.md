@@ -1,6 +1,8 @@
 # Sandiwch Expando
 ## An Animated Sandwich-Button to X React Component
 
+![example gif](./expando-menu.gif)
+
 Installation: `npm install sandwich-expando -S`.
 
 If you want to experiment locally, you can install `beefy` (`npm install -g beefy`), and then run `npm run sample` to run a live-reloading demo app.
