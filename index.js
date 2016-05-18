@@ -15,10 +15,8 @@ SandwichExpandoComponent.prototype.render = function() {
   const isOpen = this.props.isOpen
   const onClick = this.props.onClick
 
-  const message = isOpen ? 'Open' : 'Closed'
-
-  const topRot = `rotate(${isOpen ? 0 : 45}deg)`
-  const botRot = `rotate(${isOpen ? 0 : -45}deg)`
+  const topRot = `rotate(${isOpen ? 45 : 0}deg)`
+  const botRot = `rotate(${isOpen ? -45 : 0}deg)`
 
   const padding = this.props.padding || 5
   const barHeight = this.props.barHeight || 5
@@ -60,7 +58,7 @@ SandwichExpandoComponent.prototype.render = function() {
       h('div', {
         style: {
           height: `${barHeight}px`,
-          opacity: isOpen ? '1.0' : '0.0',
+          opacity: isOpen ? '0.0' : '1.0',
           width: '100%',
           borderRadius: '100px',
           background: this.props.color || 'grey',
