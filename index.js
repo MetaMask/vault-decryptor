@@ -18,10 +18,10 @@ SandwichExpandoComponent.prototype.render = function() {
   const topRot = `rotate(${isOpen ? 45 : 0}deg)`
   const botRot = `rotate(${isOpen ? -45 : 0}deg)`
 
-  const padding = this.props.padding || 5
-  const barHeight = this.props.barHeight || 5
+  const padding = ('padding' in this.props) ? this.props.padding : 5
+  const barHeight = ('barHeight' in this.props) ? this.props.barHeight : 5
 
-  const width = this.props.width || 44
+  const width = ('width' in this.props) ? this.props.width : 44
   const innerWidth = width - barHeight
   const innerHeight = Math.sqrt(Math.pow(innerWidth, 2) / 2)
   const height = innerHeight + barHeight
@@ -34,12 +34,13 @@ SandwichExpandoComponent.prototype.render = function() {
     h('.sandwich-expando', {
       onClick,
       style: {
-        padding: this.props.padding || 5,
+        padding: `${padding}px`,
         width: `${width}px`,
         height: `${height}px`,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
+        cursor: 'pointer',
       },
     }, [
 
