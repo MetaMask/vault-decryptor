@@ -1,6 +1,6 @@
 {
   "name": "sandwich-expando",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Installation: `npm install sandwich-expando -S`.",
   "main": "index.js",
   "scripts": {
