@@ -30,20 +30,20 @@ SandwichExpandoComponent.prototype.render = function() {
 
   const transformOrigin = `${barHeight/2}px ${barHeight/2}px`
 
+  let style = ('style' in this.props) ? this.props.style : {}
+  style.padding = `${padding}px`
+  style.width = `${width}px`
+  style.height = `${height}px`
+  style.display = flex
+  style.flexDirection = 'column'
+  style.justifyContent = 'space-between'
+  style.cursor = 'pointer'
+
   return (
     h('.sandwich-expando', {
       onClick,
-      style: {
-        padding: `${padding}px`,
-        width: `${width}px`,
-        height: `${height}px`,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        cursor: 'pointer',
-      },
+      style,
     }, [
-
       h('div', {
         style: {
           height: `${barHeight}px`,
