@@ -4,7 +4,7 @@
   "description": "A boilerplate for react-hyperscript using browserify with beefy and ES6.",
   "main": "index.js",
   "scripts": {
-    "start": "beefy index.js --live --open",
+    "start": "beefy index.js:bundle.js --live --open",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "browserify": {
