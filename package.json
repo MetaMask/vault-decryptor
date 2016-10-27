@@ -1,6 +1,6 @@
 {
-  "name": "react-hyperscript-beefy-es6-boilerplate",
-  "version": "1.0.0",
+  "name": "react-hyperscript-beefy-boilerplate",
+  "version": "2.3.0",
   "description": "A boilerplate for react-hyperscript using browserify with beefy and ES6.",
   "main": "index.js",
   "scripts": {
