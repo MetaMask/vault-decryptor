@@ -2,6 +2,8 @@
 
 A web UI for exploring MetaMask state log JSON files.
 
+[Visit live page here](https://metamask.github.io/state-log-explorer/)
+
 To run:
 
 `npm start`
