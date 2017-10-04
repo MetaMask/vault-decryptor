@@ -947,7 +947,9 @@ AppRoot.prototype.render = function () {
 
   return h('.content', [h('div', {
     style: {}
-  }, [h('h1', 'State Log Explorer'), h(_reactDropzone2.default, {
+  }, [h('h1', 'State Log Explorer'), h('a', {
+    href: 'https://github.com/MetaMask/state-log-explorer'
+  }, 'Fork on Github'), h(_reactDropzone2.default, {
     onDrop: this.onDrop.bind(this)
   }, [h('p', 'Drop a state log file here.')]), parsedFile ? h(StateViewer, { parsedFile: parsedFile }) : null])]);
 };

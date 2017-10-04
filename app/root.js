@@ -32,6 +32,9 @@ AppRoot.prototype.render = function () {
         },
       }, [
         h('h1', `State Log Explorer`),
+        h('a', {
+          href: 'https://github.com/MetaMask/state-log-explorer',
+        }, 'Fork on Github'),
 
         h(Dropzone, {
           onDrop: this.onDrop.bind(this),
