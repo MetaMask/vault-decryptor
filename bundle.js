@@ -883,6 +883,9 @@ NewComponent.prototype.render = function () {
       retryCount = transaction.retryCount;
 
 
+  var date = new Date(time);
+  var dateString = date.toGMTString();
+
   var statusColor = 'white';
   switch (status) {
     case 'failed':
@@ -907,7 +910,7 @@ NewComponent.prototype.render = function () {
       border: '1px solid black',
       backgroundColor: statusColor
     }
-  }, [h('p', 'From: ' + txParams.from), h('p', 'To: ' + txParams.to), h('p', 'Hash: ' + hash)]);
+  }, [h('p', 'Time: ' + dateString), h('p', 'From: ' + txParams.from), h('p', 'To: ' + txParams.to), h('p', 'Status: ' + status), h('p', 'Hash: ' + hash)]);
 };
 
 },{"react":218,"react-hyperscript":184,"util":4}],8:[function(require,module,exports){

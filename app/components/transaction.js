@@ -17,6 +17,9 @@ NewComponent.prototype.render = function () {
     gasLimitSpecified, estimatedGas,
     history, hash, retryCount } = transaction
 
+  const date = new Date(time)
+  const dateString = date.toGMTString()
+
   let statusColor = 'white'
   switch (status) {
     case 'failed':
@@ -43,8 +46,10 @@ NewComponent.prototype.render = function () {
         backgroundColor: statusColor,
       },
     }, [
+      h('p', `Time: ${dateString}`),
       h('p', `From: ${txParams.from}`),
       h('p', `To: ${txParams.to}`),
+      h('p', `Status: ${status}`),
       h('p', `Hash: ${hash}`),
     ])
   )
