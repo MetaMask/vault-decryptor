@@ -8,6 +8,6 @@ To run:
 
 To build:
 
-`browserify index.js -o bundle.js`
+`npm run build`
 
 Then just include `bundle.js` in an HTML file.
