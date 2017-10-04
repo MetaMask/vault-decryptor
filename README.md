@@ -1,6 +1,6 @@
-# React Hyperscript Beefy ES6 Boilerplate
+# State Log Explorer
 
-Because what good is a boilerplate when it isn't the stack that I'm kinda into at the moment?
+A web UI for exploring MetaMask state log JSON files.
 
 To run:
 
