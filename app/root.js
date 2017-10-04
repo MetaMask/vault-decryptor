@@ -32,6 +32,12 @@ AppRoot.prototype.render = function () {
         },
       }, [
         h('h1', `State Log Explorer`),
+
+        h('a', {
+          href: 'https://support.metamask.io/kb/article/15-copying-state-logs',
+        }, 'How to Copy MetaMask State Logs'),
+        h('br'),
+
         h('a', {
           href: 'https://github.com/MetaMask/state-log-explorer',
         }, 'Fork on Github'),

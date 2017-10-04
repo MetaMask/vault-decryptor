@@ -6506,9 +6506,15 @@ function StateViewer() {
 StateViewer.prototype.render = function () {
   var props = this.props || {};
   var parsedFile = props.parsedFile;
+  var version = parsedFile.version;
 
 
-  return h('.state-viewer', [h(Transactions, { transactions: parsedFile.metamask.selectedAddressTxList })]);
+  return h('.state-viewer', [h('section.overview', {
+    style: {
+      padding: '5px',
+      background: '#DDD'
+    }
+  }, [h('p', 'MetaMask Version ' + version)]), h(Transactions, { transactions: parsedFile.metamask.selectedAddressTxList })]);
 };
 
 },{"./transaction-list":34,"react":295,"react-hyperscript":261,"util":32}],34:[function(require,module,exports){
@@ -6531,9 +6537,9 @@ TransactionList.prototype.render = function () {
   var transactions = props.transactions;
 
 
-  return h('.transaction-list', transactions.map(function (transaction) {
+  return h('section.transactions', [h('h2', 'Sent Transactions'), h('.transaction-list', transactions.map(function (transaction) {
     return h(Transaction, { transaction: transaction });
-  }));
+  }))]);
 };
 
 },{"./transaction":35,"react":295,"react-hyperscript":261,"util":32}],35:[function(require,module,exports){
@@ -6644,6 +6650,8 @@ AppRoot.prototype.render = function () {
   return h('.content', [h('div', {
     style: {}
   }, [h('h1', 'State Log Explorer'), h('a', {
+    href: 'https://support.metamask.io/kb/article/15-copying-state-logs'
+  }, 'How to Copy MetaMask State Logs'), h('br'), h('a', {
     href: 'https://github.com/MetaMask/state-log-explorer'
   }, 'Fork on Github'), h(_reactDropzone2.default, {
     onDrop: this.onDrop.bind(this)
