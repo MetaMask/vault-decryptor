@@ -2,6 +2,9 @@ const inherits = require('util').inherits
 const Component = require('react').Component
 const h = require('react-hyperscript')
 const connect = require('react-redux').connect
+const StateViewer = require('./components/state-viewer')
+
+import Dropzone from 'react-dropzone'
 
 module.exports = connect(mapStateToProps)(AppRoot)
 
@@ -19,28 +22,48 @@ function AppRoot () {
 
 AppRoot.prototype.render = function () {
   const props = this.props
+  const state = this.state || {}
+  const { parsedFile } = state
 
   return (
     h('.content', [
       h('div', {
         style: {
-          background: 'grey',
         },
       }, [
-        h('h1', `Welcome ${props.view}`),
-        h('h2', `The count is ${props.nonce}`),
+        h('h1', `State Log Explorer`),
 
-        h('button', {
-          onClick: () => this.incrementNonce(),
-        }, 'COUNT HIGHER!'),
+        h(Dropzone, {
+          onDrop: this.onDrop.bind(this),
+        }, [
+          h('p', 'Drop a state log file here.')
+        ]),
+
+        parsedFile ? h(StateViewer, { parsedFile }) : null,
 
       ])
     ])
   )
 }
 
-AppRoot.prototype.incrementNonce = function() {
-  this.props.dispatch({
-    type: 'INCREMENT_NONCE'
-  })
+AppRoot.prototype.onDrop = function(acceptedFiles, rejectedFiles) {
+  if (acceptedFiles && acceptedFiles.length > 0) {
+    console.log('FILES DROPPED!')
+    console.dir(acceptedFiles)
+    const file = acceptedFiles[0]
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const fileAsBinaryString = reader.result;
+      console.log('RESULT!')
+      const parsedFile = JSON.parse(fileAsBinaryString)
+      console.dir(parsedFile)
+      this.setState({ parsedFile })
+    };
+    reader.onabort = () => console.log('file reading was aborted');
+    reader.onerror = () => console.log('file reading has failed');
+
+    reader.readAsBinaryString(file);
+  }
 }
+
