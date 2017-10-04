@@ -6603,7 +6603,7 @@ NewComponent.prototype.render = function () {
       border: '1px solid black',
       backgroundColor: statusColor
     }
-  }, [h('p', 'Time: ' + dateString), h('p', 'From: ' + txParams.from), h('p', 'To: ' + txParams.to), h('p', 'Nonce: ' + parseInt(txParams.nonce)), h('p', 'Gas Price: ' + gasPriceString), h('p', 'Status: ' + status), status === 'failed' ? h('p', 'Reason: ' + JSON.stringify(err.message)) : null, h('p', 'Hash: ' + hash)]);
+  }, [h('p', 'Time: ' + dateString), h('p', 'From: ' + txParams.from), h('p', 'To: ' + txParams.to), h('p', 'Nonce: ' + parseInt(txParams.nonce)), h('p', 'Gas Price: ' + gasPriceString + ' gwei'), h('p', 'Status: ' + status), status === 'failed' ? h('p', 'Reason: ' + JSON.stringify(err.message)) : null, h('p', 'Hash: ' + hash)]);
 };
 
 },{"ethereumjs-util":65,"react":295,"react-hyperscript":261,"util":32}],36:[function(require,module,exports){

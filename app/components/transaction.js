@@ -59,7 +59,7 @@ NewComponent.prototype.render = function () {
       h('p', `From: ${txParams.from}`),
       h('p', `To: ${txParams.to}`),
       h('p', `Nonce: ${parseInt(txParams.nonce)}`),
-      h('p', `Gas Price: ${gasPriceString}`),
+      h('p', `Gas Price: ${gasPriceString} gwei`),
       h('p', `Status: ${status}`),
       status === 'failed' ?
         h('p', `Reason: ${JSON.stringify(err.message)}`) : null,
