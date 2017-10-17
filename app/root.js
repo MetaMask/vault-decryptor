@@ -2,9 +2,7 @@ const inherits = require('util').inherits
 const Component = require('react').Component
 const h = require('react-hyperscript')
 const connect = require('react-redux').connect
-const StateViewer = require('./components/state-viewer')
-
-import Dropzone from 'react-dropzone'
+const passworder = require('browser-passworder')
 
 module.exports = connect(mapStateToProps)(AppRoot)
 
@@ -18,12 +16,18 @@ function mapStateToProps (state) {
 inherits(AppRoot, Component)
 function AppRoot () {
   Component.call(this)
+  this.state = {
+    vaultData: '',
+    password: '',
+    error: null,
+    decrypted: null,
+  }
 }
 
 AppRoot.prototype.render = function () {
   const props = this.props
   const state = this.state || {}
-  const { parsedFile } = state
+  const { error, decrypted } = state
 
   return (
     h('.content', [
@@ -31,48 +35,74 @@ AppRoot.prototype.render = function () {
         style: {
         },
       }, [
-        h('h1', `State Log Explorer`),
+        h('h1', `MetaMask Vault Decryptor`),
 
         h('a', {
-          href: 'https://support.metamask.io/kb/article/15-copying-state-logs',
-        }, 'How to Copy MetaMask State Logs'),
+          href: 'https://support.metamask.io/kb/article/22-how-to-copy-your-vault-data',
+        }, 'How to Copy Your Vault Data'),
         h('br'),
 
         h('a', {
-          href: 'https://github.com/MetaMask/state-log-explorer',
+          href: 'https://github.com/MetaMask/vault-decryptor',
         }, 'Fork on Github'),
+        h('br'),
 
-        h(Dropzone, {
-          onDrop: this.onDrop.bind(this),
-        }, [
-          h('p', 'Drop a state log file here.')
-        ]),
+        h('textarea.vault-data', {
+          placeholder: 'Paste your vault data here.',
+          onChange: (event) => {
+            const vaultData = event.target.value
+            this.setState({ vaultData })
+          },
+        }),
+        h('br'),
 
-        parsedFile ? h(StateViewer, { parsedFile }) : null,
+        h('input.password', {
+          type: 'password',
+          placeholder: 'Password',
+          onChange: (event) => {
+            const password = event.target.value
+            this.setState({ password })
+          },
+        }),
+        h('br'),
+
+        h('button.decrypt', {
+          onClick: this.decrypt.bind(this),
+        }, 'Decrypt'),
+
+        error ? h('.error', {
+          style: { color: 'red' },
+        }, error) : null,
+
+        decrypted ? h('div', decrypted) : null,
 
       ])
     ])
   )
 }
 
-AppRoot.prototype.onDrop = function(acceptedFiles, rejectedFiles) {
-  if (acceptedFiles && acceptedFiles.length > 0) {
-    console.log('FILES DROPPED!')
-    console.dir(acceptedFiles)
-    const file = acceptedFiles[0]
+AppRoot.prototype.decrypt = function(event) {
+  const { password, vaultData } = this.state
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const fileAsBinaryString = reader.result;
-      console.log('RESULT!')
-      const parsedFile = JSON.parse(fileAsBinaryString)
-      console.dir(parsedFile)
-      this.setState({ parsedFile })
-    };
-    reader.onabort = () => console.log('file reading was aborted');
-    reader.onerror = () => console.log('file reading has failed');
+  let vault
+  try {
+    const whole = JSON.parse(vaultData)
+    vault = whole.data.KeyringController.vault
+  } catch (e) {
+    console.error(reason)
+    return this.setState({ error: 'Problem decoding vault.' })
 
-    reader.readAsBinaryString(file);
   }
+
+  passworder.decrypt(password, vault)
+  .then((decryptedObj) => {
+    const decrypted = JSON.stringify(decryptedObj)
+    console.log('Decrypted!', decrypted)
+    this.setState({ decrypted })
+  })
+  .catch((reason) => {
+    console.error(reason)
+    this.setState({ error: 'Problem decoding vault.' })
+  })
 }
 

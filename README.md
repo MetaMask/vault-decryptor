@@ -1,8 +1,8 @@
-# State Log Explorer
+# Vault Decryptor
 
-A web UI for exploring MetaMask state log JSON files.
+A web UI for decrypting MetaMask local storage.
 
-[Visit live page here](https://metamask.github.io/state-log-explorer/)
+[Visit live page here](https://metamask.github.io/vault-decryptor/)
 
 To run:
 
