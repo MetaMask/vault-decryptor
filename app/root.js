@@ -48,6 +48,10 @@ AppRoot.prototype.render = function () {
         h('br'),
 
         h('textarea.vault-data', {
+          style: {
+            width: '600px',
+            height: '300px'
+          },
           placeholder: 'Paste your vault data here.',
           onChange: (event) => {
             const vaultData = event.target.value
@@ -88,7 +92,7 @@ AppRoot.prototype.decrypt = function(event) {
   try {
     vault = vaultData
   } catch (e) {
-    console.error(reason)
+    console.error(e)
     return this.setState({ error: 'Problem decoding vault.' })
 
   }
