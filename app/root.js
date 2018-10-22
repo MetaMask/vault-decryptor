@@ -86,8 +86,7 @@ AppRoot.prototype.decrypt = function(event) {
 
   let vault
   try {
-    const whole = JSON.parse(vaultData)
-    vault = whole.data.KeyringController.vault
+    vault = vaultData
   } catch (e) {
     console.error(reason)
     return this.setState({ error: 'Problem decoding vault.' })
