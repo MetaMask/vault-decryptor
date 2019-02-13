@@ -4,11 +4,19 @@ A web UI for decrypting MetaMask local storage.
 
 [Visit live page here](https://metamask.github.io/vault-decryptor/)
 
-To run:
+## Pre-requisites:
+
+To run the vault decryptor locally, ensure both Beefy and Browserify are installed:
+
+`npm install -g browserify`
+
+`npm install -g beefy`
+
+## To run:
 
 `npm start`
 
-To build:
+## To build:
 
 `npm run build`
 
