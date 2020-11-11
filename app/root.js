@@ -94,7 +94,7 @@ AppRoot.prototype.decrypt = function(event) {
     vault = vaultData
   } catch (e) {
     console.error(e)
-    return this.setState({ error: 'Problem decoding vault.' })
+    return this.setState({ error: 'Problem decoding vault: ' + JSON.stringify(e) })
 
   }
 
