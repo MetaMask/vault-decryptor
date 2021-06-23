@@ -1,6 +1,7 @@
 {
   "name": "metamask-state-log-explorer",
   "version": "1.0.0",
+  "private": true,
   "description": "A boilerplate for react-hyperscript using browserify with beefy and ES6.",
   "main": "index.js",
   "scripts": {
