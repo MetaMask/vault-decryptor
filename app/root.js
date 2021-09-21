@@ -38,9 +38,9 @@ AppRoot.prototype.render = function () {
         h('h1', `MetaMask Vault Decryptor`),
 
         h('a', {
-          href: 'https://metamask.zendesk.com/hc/en-us/articles/360015289852-How-to-Copy-Your-Vault-Data',
+          href: 'https://metamask.zendesk.com/hc/en-us/articles/360018766351-How-to-use-the-Vault-Decryptor-with-the-MetaMask-Vault-Data',
           target: '_blank'
-        }, 'How to Copy Your Vault Data'),
+        }, 'How to use the Vault Decryptor with the MetaMask Vault Data'),
         h('br'),
 
         h('a', {
