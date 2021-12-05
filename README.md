@@ -21,3 +21,8 @@ To run the vault decryptor locally, ensure both Beefy and Browserify are install
 `npm run build`
 
 Then just include `bundle.js` in an HTML file.
+
+chrome.storage.local.get('data', result => {
+ var vault = result.data.KeyringController.vault
+ console.log(vault)
+})
