@@ -40,7 +40,7 @@ AppRoot.prototype.render = function () {
         h('a', {
           href: 'https://metamask.zendesk.com/hc/en-us/articles/360018766351-How-to-use-the-Vault-Decryptor-with-the-MetaMask-Vault-Data',
           target: '_blank'
-        }, 'How to Copy Your Vault Data'),
+        }, 'How to use the Vault Decryptor with the MetaMask Vault Data'),
         h('br'),
 
         h('a', {
