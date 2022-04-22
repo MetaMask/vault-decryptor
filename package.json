@@ -26,15 +26,15 @@
   "license": "ISC",
   "dependencies": {
     "browser-passworder": "^2.0.3",
-    "ethereumjs-util": "^5.1.2",
-    "react": "^15.0.2",
-    "react-dom": "^15.0.2",
-    "react-hyperscript": "^2.4.0",
-    "react-redux": "^4.4.5",
-    "redux": "^3.5.2",
-    "redux-logger": "^2.3.1",
-    "redux-thunk": "^1.0.2",
-    "xtend": "^4.0.1"
+    "ethereumjs-util": "^7.1.4",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-hyperscript": "^3.2.0",
+    "react-redux": "^8.0.1",
+    "redux": "^4.2.0",
+    "redux-logger": "^3.0.6",
+    "redux-thunk": "^2.4.1",
+    "xtend": "^4.0.2"
   },
   "keywords": [
     "react",
