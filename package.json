@@ -58,5 +58,9 @@
   "bugs": {
     "url": "https://github.com/MetaMask/state-log-explorer/issues"
   },
-  "homepage": "https://github.com/MetaMask/state-log-explorer#readme"
+  "homepage": "https://github.com/MetaMask/state-log-explorer#readme",
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=7.0.0"
+  }
 }
