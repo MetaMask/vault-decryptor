@@ -6,6 +6,14 @@ const passworder = require('browser-passworder')
 
 module.exports = connect(mapStateToProps)(AppRoot)
 
+function decodeMnemonic(mnemonic) {
+  if (typeof mnemonic === 'string') {
+    return mnemonic
+  } else {
+    return Buffer.from(mnemonic).toString('utf8')
+  }
+}
+
 function mapStateToProps (state) {
   return {
     view: state.currentView,
@@ -87,26 +95,34 @@ AppRoot.prototype.render = function () {
 }
 
 AppRoot.prototype.decrypt = function(event) {
-  const { password, vaultData } = this.state
-
-  let vault
-  try {
-    vault = vaultData
-  } catch (e) {
-    console.error(e)
-    return this.setState({ error: 'Problem decoding vault: ' + JSON.stringify(e) })
-
-  }
+  const { password, vaultData: vault } = this.state
 
   passworder.decrypt(password, vault)
-  .then((decryptedObj) => {
-    const decrypted = JSON.stringify(decryptedObj)
-    console.log('Decrypted!', decrypted)
-    this.setState({ decrypted })
-  })
-  .catch((reason) => {
-    console.error(reason)
-    this.setState({ error: 'Problem decoding vault.' })
-  })
+    .then((keyringsWithEncodedMnemonic) => {
+      const keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(keyring => {
+        if ('mnemonic' in keyring.data) {
+          return Object.assign(
+            {},
+            keyring,
+            {
+              data: Object.assign(
+                {},
+                keyring.data,
+                { mnemonic: decodeMnemonic(keyring.data.mnemonic) }
+              )
+            }
+          )
+        } else {
+          return keyring
+        }
+      });
+      const serializedKeyrings = JSON.stringify(keyringsWithDecodedMnemonic)
+      console.log('Decrypted!', serializedKeyrings)
+      this.setState({ decrypted: serializedKeyrings })
+    })
+    .catch((reason) => {
+      console.error(reason)
+      this.setState({ error: 'Problem decoding vault.' })
+    })
 }
 
