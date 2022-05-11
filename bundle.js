@@ -4265,7 +4265,6 @@ AppRoot.prototype.decrypt = function (event) {
 
 
   passworder.decrypt(password, vault).then(function (keyringsWithEncodedMnemonic) {
-    console.log('keyringsWithEncodedMnemonic', keyringsWithEncodedMnemonic);
     var keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(function (keyring) {
       if ('mnemonic' in keyring.data) {
         return Object.assign({}, keyring, {
