@@ -85,7 +85,7 @@ AppRoot.prototype.render = function () {
                   type: 'radio',
                   onChange: (event) => {
                     if (event.target.checked) {
-                      this.setState({vaultSource: 'file'})
+                      this.setState({vaultSource: 'file', vaultData: null})
                     }
                   }
                 }),
@@ -145,7 +145,7 @@ AppRoot.prototype.render = function () {
                   type: 'radio',
                   onChange: (event) => {
                     if (event.target.checked) {
-                      this.setState({vaultSource: 'text'})
+                      this.setState({vaultSource: 'text', vaultData: null, fileValidation: null})
                     }
                   }
                 }),
