@@ -57,55 +57,96 @@ AppRoot.prototype.render = function () {
         }, 'Fork on Github'),
         h('br'),
 
-        h('label', {
-          htmlFor: 'fileinput',
-        }, 'Database backup'),
-        h('input.file', {
-          id: 'fileinput',
-          type: 'file',
-          placeholder: 'file',
-          onChange: async (event) => {
-            // TODO: Clear error
+        h('hr'),
 
-            if (event.target.files.length) {
-              const f = event.target.files[0]
-              // TODO: handle other format
-              // lmdb
-              const data = await f.text()
-              const vaultData = extractVaultFromLMDB(data)
-              this.setState({ vaultData })
-            }
-          },
-        }),
-        h('br'),
+        h('table', {}, [
+          h('tbody', {}, [
+            h('tr', {}, [
+              h('td', {}, [
+                h('input', {
+                  id: 'radio-fileinput',
+                  name: 'vault-source',
+                  type: 'radio',
+                  onChange: (event) => {
+                    if (event.target.checked) {
+                      this.setState({vaultSource: 'file'})
+                    }
+                  }
+                }),
+                h('label', {
+                  htmlFor: 'radio-fileinput',
+                }, 'Database backup'),
+              ]),
+              h('td', {}, [
+                h('input.file', {
+                  disabled: this.state.vaultSource !== 'file',
+                  id: 'fileinput',
+                  type: 'file',
+                  placeholder: 'file',
+                  onChange: async (event) => {
+                    // TODO: Clear error
 
-        h('textarea.vault-data', {
-          style: {
-            width: '600px',
-            height: '300px'
-          },
-          placeholder: 'Paste your vault data here.',
-          onChange: (event) => {
-            try {
-              const vaultData = JSON.parse(event.target.value)
-              if (
-                typeof vaultData !== 'object' ||
-                !['data', 'iv', 'salt'].every(e => Object.keys(vaultData).includes(e))
-              ) {
-                // console.error('Invalid input data');
-                return
-              }
-              this.setState({ vaultData })
-            } catch (err) {
-              if (err.name === 'SyntaxError') {
-                // Invalid JSON
-              } else {
-                console.error(err)
-              }
-            }
-          },
-        }),
-        h('br'),
+                    if (event.target.files.length) {
+                      const f = event.target.files[0]
+                      // TODO: handle other format
+                      // lmdb
+                      const data = await f.text()
+                      const vaultData = extractVaultFromLMDB(data)
+                      this.setState({ vaultData })
+                    }
+                  },
+                }),
+              ]),
+            ]),
+            h('tr', {}, [
+              h('td', {}, [
+                h('input', {
+                  id: 'radio-textinput',
+                  name: 'vault-source',
+                  type: 'radio',
+                  onChange: (event) => {
+                    if (event.target.checked) {
+                      this.setState({vaultSource: 'text'})
+                    }
+                  }
+                }),
+                h('label', {
+                  htmlFor: 'radio-textinput',
+                }, 'Paste text'),
+              ]),
+              h('td', {}, [
+                h('textarea.vault-data', {
+                  disabled: this.state.vaultSource !== 'text',
+                  id: 'textinput',
+                  style: {
+                    width: '600px',
+                    height: '300px'
+                  },
+                  placeholder: 'Paste your vault data here.',
+                  onChange: (event) => {
+                    try {
+                      const vaultData = JSON.parse(event.target.value)
+                      if (
+                        typeof vaultData !== 'object' ||
+                        !['data', 'iv', 'salt'].every(e => Object.keys(vaultData).includes(e))
+                      ) {
+                        // console.error('Invalid input data');
+                        return
+                      }
+                      this.setState({ vaultData })
+                    } catch (err) {
+                      if (err.name === 'SyntaxError') {
+                        // Invalid JSON
+                      } else {
+                        console.error(err)
+                      }
+                    }
+                  },
+                }),
+              ]),
+            ]),
+          ]),
+        ]),
 
         h('input.password', {
           type: 'password',
