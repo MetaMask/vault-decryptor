@@ -259,6 +259,10 @@ AppRoot.prototype.decrypt = function(event) {
       this.setState({ decrypted: serializedKeyrings })
     })
     .catch((reason) => {
+      if (reason.message === 'Incorrect password') {
+        this.setState({ error: reason.message })
+        return
+      }
       console.error(reason)
       this.setState({ error: 'Problem decoding vault.' })
     })
