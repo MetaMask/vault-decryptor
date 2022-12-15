@@ -139,6 +139,7 @@ AppRoot.prototype.decrypt = function(event) {
     return;
   }
 
+  this.setState({ error: null })
   return passworder.decrypt(password, JSON.stringify(vault))
     .then((keyringsWithEncodedMnemonic) => {
       const keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(keyring => {
