@@ -119,6 +119,7 @@ AppRoot.prototype.render = function () {
 
         h('button.decrypt', {
           onClick: this.decrypt.bind(this),
+          disabled: !this.state.vaultData || !this.state.password,
         }, 'Decrypt'),
 
         error ? h('.error', {
