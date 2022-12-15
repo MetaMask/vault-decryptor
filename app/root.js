@@ -119,8 +119,8 @@ AppRoot.prototype.render = function () {
                   disabled: this.state.vaultSource !== 'text',
                   id: 'textinput',
                   style: {
-                    width: '600px',
-                    height: '300px'
+                    width: '50em',
+                    height: '15em'
                   },
                   placeholder: 'Paste your vault data here.',
                   onChange: (event) => {
