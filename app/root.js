@@ -72,7 +72,7 @@ AppRoot.prototype.render = function () {
               // TODO: handle other format
               // lmdb
               const data = await f.text()
-              const vaultData = JSON.stringify(extractVaultFromLMDB(data))
+              const vaultData = extractVaultFromLMDB(data)
               this.setState({ vaultData })
             }
           },
@@ -86,8 +86,23 @@ AppRoot.prototype.render = function () {
           },
           placeholder: 'Paste your vault data here.',
           onChange: (event) => {
-            const vaultData = event.target.value
-            this.setState({ vaultData })
+            try {
+              const vaultData = JSON.parse(event.target.value)
+              if (
+                typeof vaultData !== 'object' ||
+                !['data', 'iv', 'salt'].every(e => Object.keys(vaultData).includes(e))
+              ) {
+                // console.error('Invalid input data');
+                return
+              }
+              this.setState({ vaultData })
+            } catch (err) {
+              if (err.name === 'SyntaxError') {
+                // Invalid JSON
+              } else {
+                console.error(err)
+              }
+            }
           },
         }),
         h('br'),
@@ -120,7 +135,11 @@ AppRoot.prototype.render = function () {
 AppRoot.prototype.decrypt = function(event) {
   const { password, vaultData: vault } = this.state
 
-  return passworder.decrypt(password, vault)
+  if (!vault || !password) {
+    return;
+  }
+
+  return passworder.decrypt(password, JSON.stringify(vault))
     .then((keyringsWithEncodedMnemonic) => {
       const keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(keyring => {
         if ('mnemonic' in keyring.data) {
