@@ -2,7 +2,7 @@ const inherits = require('util').inherits
 const Component = require('react').Component
 const h = require('react-hyperscript')
 const connect = require('react-redux').connect
-const passworder = require('browser-passworder')
+const passworder = require('@metamask/browser-passworder')
 
 module.exports = connect(mapStateToProps)(AppRoot)
 
