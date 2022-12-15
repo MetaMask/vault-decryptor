@@ -145,18 +145,27 @@ AppRoot.prototype.render = function () {
                 }),
               ]),
             ]),
+            h('tr', {}, [
+              h('td', {}, [
+                h('label', {
+                  htmlFor: 'passwordinput',
+                }, 'Password'),
+              ]),
+              h('td', {}, [
+                h('input.password', {
+                  id: 'passwordinput',
+                  type: 'password',
+                  placeholder: 'Password',
+                  onChange: (event) => {
+                    const password = event.target.value
+                    this.setState({ password })
+                  },
+                }),
+              ]),
+            ]),
           ]),
         ]),
 
-        h('input.password', {
-          type: 'password',
-          placeholder: 'Password',
-          onChange: (event) => {
-            const password = event.target.value
-            this.setState({ password })
-          },
-        }),
-        h('br'),
 
         h('button.decrypt', {
           onClick: this.decrypt.bind(this),
@@ -167,8 +176,16 @@ AppRoot.prototype.render = function () {
           style: { color: 'red' },
         }, error) : null,
 
-        decrypted ? h('div', decrypted) : null,
-
+        decrypted ? h('div', {}, h('div', {
+                style: {
+                  backgroundColor: 'black',
+                  color: 'white',
+                  display: 'inline-block',
+                  fontFamily: 'monospace',
+                  margin: '1em',
+                  padding: '1em',
+                }
+              }, decrypted)) : null,
       ])
     ])
   )
