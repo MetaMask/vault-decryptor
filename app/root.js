@@ -3,6 +3,7 @@ const Component = require('react').Component
 const h = require('react-hyperscript')
 const connect = require('react-redux').connect
 const passworder = require('@metamask/browser-passworder')
+const {extractVaultFromLMDB} = require('../lib/extract-lmdb-vault')
 
 module.exports = connect(mapStateToProps)(AppRoot)
 
@@ -56,6 +57,28 @@ AppRoot.prototype.render = function () {
         }, 'Fork on Github'),
         h('br'),
 
+        h('label', {
+          htmlFor: 'fileinput',
+        }, 'Database backup'),
+        h('input.file', {
+          id: 'fileinput',
+          type: 'file',
+          placeholder: 'file',
+          onChange: async (event) => {
+            // TODO: Clear error
+
+            if (event.target.files.length) {
+              const f = event.target.files[0]
+              // TODO: handle other format
+              // lmdb
+              const data = await f.text()
+              const vaultData = JSON.stringify(extractVaultFromLMDB(data))
+              this.setState({ vaultData })
+            }
+          },
+        }),
+        h('br'),
+
         h('textarea.vault-data', {
           style: {
             width: '600px',
@@ -97,7 +120,7 @@ AppRoot.prototype.render = function () {
 AppRoot.prototype.decrypt = function(event) {
   const { password, vaultData: vault } = this.state
 
-  passworder.decrypt(password, vault)
+  return passworder.decrypt(password, vault)
     .then((keyringsWithEncodedMnemonic) => {
       const keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(keyring => {
         if ('mnemonic' in keyring.data) {
