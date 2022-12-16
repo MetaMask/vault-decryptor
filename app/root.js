@@ -23,19 +23,61 @@ function mapStateToProps (state) {
 
 function isVaultValid (vault) {
   return typeof vault === 'object'
-    && ['data', 'iv', 'salt'].every(e => typeof vault[e] === 'string');
+    && ['data', 'iv', 'salt'].every(e => typeof vault[e] === 'string')
 }
 
-function extractVaultFromLMDB (data) {
-  const matches = data.match(/"KeyringController":{"vault":"{[^{}]*}"/)
-  if (!matches || !matches.length) {
+// Deduplicates array with rudimentary non-recursive shallow comparison of keys
+function dedupe (arr) {
+  const result = []
+  arr.forEach(x => {
+    if (!result.find(y => Object.keys(x).length === Object.keys(y).length && Object.entries(x).every(([k,ex]) => y[k] === ex ))) {
+      result.push(x)
+    }
+  })
+  return result
+}
+
+function extractVaultFromFile (data) {
+  let vaultBody
+  try {
+    // attempt 1: raw json
+    return JSON.parse(data)
+  } catch (err) {
+    // Not valid JSON: continue
+  }
+  {
+    // attempt 2: chromium 000003.log file on linux
+    const matches = data.match(/"KeyringController":{"vault":"{[^{}]*}"/)
+    if (matches && matches.length) {
+      vaultBody=matches[0].substring(29)
+      return JSON.parse(
+        JSON.parse(
+          vaultBody
+        )
+      )
+    }
+  }
+  // attempt 3: chromium 000005.ldb on windows
+  const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
+  const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
+  const ivRegex = /\\"iv.[^A-Za-z0-9+\/]*([A-Za-z0-9+\/]*=*)/u
+  const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
+  const saltRegex = /,\\"salt.[^A-Za-z0-9+\/]*([A-Za-z0-9+\/]*=*)/u
+  const vaults = dedupe(data.match(matchRegex).map(m => m.match(captureRegex)[1])
+    .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
+    .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
+    .map(([d,i,s]) => ({
+      data: d[1],
+      iv: i[1],
+      salt: s[1],
+    })))
+  if (!vaults.length) {
     return null
   }
-  return JSON.parse(
-    JSON.parse(
-      matches[0].substring(29)
-    )
-  )
+  if (vaults.length > 1) {
+    console.log('Found multiple vaults!', vaults)
+  }
+  return vaults[0]
 }
 
 inherits(AppRoot, Component)
@@ -106,14 +148,9 @@ AppRoot.prototype.render = function () {
                         return
                       }
                       const f = event.target.files[0]
-                      // TODO: handle other format
-                      // lmdb
                       const data = await f.text()
-                      let vaultData = extractVaultFromLMDB(data)
-                      if (!vaultData) {
-                        vaultData = JSON.parse(data)
-                      }
-                      if (!isVaultValid(vaultData)) {
+                      let vaultData = extractVaultFromFile(data)
+                      if (!vaultData || !isVaultValid(vaultData)) {
                         this.setState({ fileValidation: 'fail' })
                         this.setState({ vaultData: null })
                         return
@@ -166,7 +203,7 @@ AppRoot.prototype.render = function () {
                     try {
                       const vaultData = JSON.parse(event.target.value)
                       if (!isVaultValid(vaultData)) {
-                        // console.error('Invalid input data');
+                        // console.error('Invalid input data')
                         return
                       }
                       this.setState({ vaultData })
@@ -231,7 +268,7 @@ AppRoot.prototype.decrypt = function(event) {
   const { password, vaultData: vault } = this.state
 
   if (!vault || !password) {
-    return;
+    return
   }
 
   this.setState({ error: null })
@@ -253,7 +290,7 @@ AppRoot.prototype.decrypt = function(event) {
         } else {
           return keyring
         }
-      });
+      })
       const serializedKeyrings = JSON.stringify(keyringsWithDecodedMnemonic)
       console.log('Decrypted!', serializedKeyrings)
       this.setState({ decrypted: serializedKeyrings })
