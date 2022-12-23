@@ -3,7 +3,6 @@ const Component = require('react').Component
 const h = require('react-hyperscript')
 const connect = require('react-redux').connect
 const passworder = require('@metamask/browser-passworder')
-const {extractVaultFromLMDB} = require('../lib/extract-lmdb-vault')
 
 module.exports = connect(mapStateToProps)(AppRoot)
 
@@ -20,6 +19,23 @@ function mapStateToProps (state) {
     view: state.currentView,
     nonce: state.nonce,
   }
+}
+
+function isVaultValid (vault) {
+  return typeof vault === 'object'
+    && ['data', 'iv', 'salt'].every(e => typeof vault[e] === 'string');
+}
+
+function extractVaultFromLMDB (data) {
+  const matches = data.match(/"KeyringController":{"vault":"{[^{}]*}"/)
+  if (!matches || !matches.length) {
+    return null
+  }
+  return JSON.parse(
+    JSON.parse(
+      matches[0].substring(29)
+    )
+  )
 }
 
 inherits(AppRoot, Component)
@@ -84,18 +100,41 @@ AppRoot.prototype.render = function () {
                   type: 'file',
                   placeholder: 'file',
                   onChange: async (event) => {
-                    // TODO: Clear error
-
-                    if (event.target.files.length) {
+                    try {
+                      if (!event.target.files.length) {
+                        this.setState({ fileValidation: null })
+                        return
+                      }
                       const f = event.target.files[0]
                       // TODO: handle other format
                       // lmdb
                       const data = await f.text()
-                      const vaultData = extractVaultFromLMDB(data)
+                      let vaultData = extractVaultFromLMDB(data)
+                      if (!vaultData) {
+                        vaultData = JSON.parse(data)
+                      }
+                      if (!isVaultValid(vaultData)) {
+                        this.setState({ fileValidation: 'fail' })
+                        this.setState({ vaultData: null })
+                        return
+                      }
                       this.setState({ vaultData })
+                      this.setState({ fileValidation: 'pass' })
+                    } catch (err) {
+                      this.setState({ fileValidation: 'fail' })
+                      this.setState({ vaultData: null })
+                      if (err.name === 'SyntaxError') {
+                        // Invalid JSON
+                      } else {
+                        console.error(err)
+                      }
                     }
                   },
                 }),
+                this.state.fileValidation ? h('span', {
+                    style: { color: this.state.fileValidation === 'pass' ? 'green' : 'red'
+                  }
+                }, this.state.fileValidation === 'pass' ? '\u2705' : '\u274c Can not read vault from file') : null,
               ]),
             ]),
             h('tr', {}, [
@@ -126,10 +165,7 @@ AppRoot.prototype.render = function () {
                   onChange: (event) => {
                     try {
                       const vaultData = JSON.parse(event.target.value)
-                      if (
-                        typeof vaultData !== 'object' ||
-                        !['data', 'iv', 'salt'].every(e => Object.keys(vaultData).includes(e))
-                      ) {
+                      if (!isVaultValid(vaultData)) {
                         // console.error('Invalid input data');
                         return
                       }
