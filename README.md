@@ -14,10 +14,10 @@ To run the vault decryptor locally, ensure both Beefy and Browserify are install
 
 ## To run:
 
-`npm start`
+`yarn start`
 
 ## To build:
 
-`npm run build`
+`yarn run build`
 
 Then just include `bundle.js` in an HTML file.
