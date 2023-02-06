@@ -1,8 +1,8 @@
 {
-  "name": "metamask-state-log-explorer",
+  "name": "@metamask/vault-decryptor",
   "version": "1.0.0",
   "private": true,
-  "description": "A boilerplate for react-hyperscript using browserify with beefy and ES6.",
+  "description": "Utility for decrypting MetaMask vault data",
   "main": "index.js",
   "scripts": {
     "start": "beefy index.js:bundle.js --live --open",
@@ -43,11 +43,9 @@
     "xtend": "^4.0.2"
   },
   "keywords": [
-    "react",
-    "hyperscript",
-    "beefy",
-    "browserify",
-    "boilerplate"
+    "metamask",
+    "vault-decryptor",
+    "ethereum wallet"
   ],
   "devDependencies": {
     "@babel/preset-env": "^7.20.2",
@@ -62,12 +60,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/MetaMask/state-log-explorer.git"
+    "url": "https://github.com/MetaMask/vault-decryptor.git"
   },
   "bugs": {
-    "url": "https://github.com/MetaMask/state-log-explorer/issues"
+    "url": "https://github.com/MetaMask/vault-decryptor/issues"
   },
-  "homepage": "https://github.com/MetaMask/state-log-explorer#readme",
+  "homepage": "https://github.com/MetaMask/vault-decryptor#readme",
   "engines": {
     "node": ">=18.0.0"
   },
