@@ -42,9 +42,9 @@ function extractVaultFromFile (data) {
   // attempt 3: chromium 000005.ldb on windows
   const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
   const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
-  const ivRegex = /\\"iv.[^A-Za-z0-9+\/]*([A-Za-z0-9+\/]*=*)/u
+  const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
   const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
-  const saltRegex = /,\\"salt.[^A-Za-z0-9+\/]*([A-Za-z0-9+\/]*=*)/u
+  const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
   const vaults = dedupe(data.match(matchRegex).map(m => m.match(captureRegex)[1])
     .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
     .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
