@@ -6,14 +6,6 @@ const {
   isVaultValid,
 } = require('./lib.js')
 
-const crypto = require('crypto');
-
-Object.defineProperty(globalThis, 'crypto', {
-  value: {
-    subtle: crypto.subtle
-  }
-});
-
 const FIXTURES = [
   {
     path: 'chrome-windows-1/000005.ldb',
