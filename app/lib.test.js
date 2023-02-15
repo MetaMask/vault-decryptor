@@ -3,6 +3,7 @@ const path = require('path')
 const {
   decryptVault,
   extractVaultFromFile,
+  isVaultValid,
 } = require('./lib.js')
 
 const crypto = require('crypto');
@@ -46,5 +47,26 @@ describe('extractVaultFromFile', () => {
       expect(decrypted[0].data.mnemonic).toBe(f.mnemonic);
     })
   }
+})
+
+describe('isVaultValid', () => {
+  const validVault = {
+    data: 'foo',
+    iv: 'bar',
+    salt: 'baz',
+  };
+  it(`returns true if fields are string`, async () => {
+    expect(isVaultValid(validVault));
+  })
+  it(`returns false if keys are not string`, async () => {
+    for (const k of ['data', 'iv', 'salt']) {
+      for (const v of [null, undefined, 123]) {
+        expect(isVaultValid({
+          ...validVault,
+          [k]: v
+        })).toBe(false)
+      }
+    }
+  })
 })
 
