@@ -22,6 +22,7 @@ const FIXTURES = [
     mnemonic: 'very follow angry proof column rail smile intact broom chicken lens earth',
     passphrase: 'aePaf7aequukoo6lahraitheemu6pein',
   },
+  // note: this variety contains the SRP in cleartext so the passphrase is not actually used
   {
     path: 'chromium-90-0.4430.72_2.14.1/Local Storage/leveldb/000003.log',
     mnemonic: 'speed accuse odor ordinary exercise truly outer mask arrest life sibling height',
