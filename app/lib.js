@@ -28,7 +28,28 @@ function extractVaultFromFile (data) {
     // Not valid JSON: continue
   }
   {
-    // attempt 2: chromium 000003.log file on linux
+    // attempt 2: pre-v3 cleartext
+    // TODO: warn user that their wallet is unencrypted
+    const matches = data.match(/{"wallet-seed":"([^"}]*)"/)
+    if (matches && matches.length) {
+      const mnemonic = matches[1].replace(/\\n*/, '')
+      const vaultMatches = data.match(/"wallet":("{[ -~]*\\"version\\":2}")/)
+      const vault = vaultMatches
+        ? JSON.parse(JSON.parse(vaultMatches[1]))
+        : {}
+      return {
+        data: Object.assign(
+          {},
+          {
+            mnemonic,
+          },
+          vault,
+        )
+      }
+    }
+  }
+  {
+    // attempt 3: chromium 000003.log file on linux
     const matches = data.match(/"KeyringController":{"vault":"{[^{}]*}"/)
     if (matches && matches.length) {
       vaultBody=matches[0].substring(29)
@@ -39,7 +60,7 @@ function extractVaultFromFile (data) {
       )
     }
   }
-  // attempt 3: chromium 000005.ldb on windows
+  // attempt 4: chromium 000005.ldb on windows
   const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
   const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
   const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
@@ -69,6 +90,9 @@ function isVaultValid (vault) {
 }
 
 function decryptVault (password, vault) {
+  if (vault.data && vault.data.mnemonic) {
+    return [vault]
+  }
   return passworder.decrypt(password, JSON.stringify(vault))
   .then((keyringsWithEncodedMnemonic) => {
     const keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(keyring => {
