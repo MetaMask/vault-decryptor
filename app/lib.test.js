@@ -36,7 +36,12 @@ describe('extractVaultFromFile', () => {
       const encrypted = fs.readFileSync(p).toString()
       const vaultData = extractVaultFromFile(encrypted)
       const decrypted = await decryptVault(f.passphrase, vaultData)
-      expect(decrypted[0].data.mnemonic).toBe(f.mnemonic);
+      expect(decrypted[0].data.mnemonic).toBe(f.mnemonic)
+    })
+    it(`returns null when vault not found`, async () => {
+      const encrypted = 'foobarblob';
+      const vaultData = extractVaultFromFile(encrypted)
+      expect(vaultData).toBe(null)
     })
   }
 })

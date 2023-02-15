@@ -3,7 +3,7 @@ const passworder = require('@metamask/browser-passworder')
 // Deduplicates array with rudimentary non-recursive shallow comparison of keys
 function dedupe (arr) {
   const result = []
-  arr.forEach(x => {
+  arr?.forEach(x => {
     if (!result.find(y => Object.keys(x).length === Object.keys(y).length && Object.entries(x).every(([k,ex]) => y[k] === ex ))) {
       result.push(x)
     }
@@ -45,7 +45,7 @@ function extractVaultFromFile (data) {
   const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
   const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
   const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
-  const vaults = dedupe(data.match(matchRegex).map(m => m.match(captureRegex)[1])
+  const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
     .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
     .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
     .map(([d,i,s]) => ({
