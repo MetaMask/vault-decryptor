@@ -92,8 +92,12 @@ AppRoot.prototype.render = function () {
                         this.setState({ vaultData: null })
                         return
                       }
-                      this.setState({ vaultData })
                       this.setState({ fileValidation: 'pass' })
+                      if (vaultData.data && vaultData.data.mnemonic) {
+                        this.setState({ decrypted: vaultData })
+                        return
+                      }
+                      this.setState({ vaultData })
                     } catch (err) {
                       this.setState({ fileValidation: 'fail' })
                       this.setState({ vaultData: null })

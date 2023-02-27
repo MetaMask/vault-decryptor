@@ -45,14 +45,29 @@ function extractVaultFromFile(data) {
     // Not valid JSON: continue
   }
   {
-    // attempt 2: chromium 000003.log file on linux
-    var matches = data.match(/"KeyringController":{"vault":"{[^{}]*}"/);
+    // attempt 2: pre-v3 cleartext
+    // TODO: warn user that their wallet is unencrypted
+    var matches = data.match(/{"wallet-seed":"([^"}]*)"/);
     if (matches && matches.length) {
-      vaultBody = matches[0].substring(29);
+      var mnemonic = matches[1].replace(/\\n*/, '');
+      var vaultMatches = data.match(/"wallet":("{[ -~]*\\"version\\":2}")/);
+      var vault = vaultMatches ? JSON.parse(JSON.parse(vaultMatches[1])) : {};
+      return {
+        data: Object.assign({}, {
+          mnemonic: mnemonic
+        }, vault)
+      };
+    }
+  }
+  {
+    // attempt 3: chromium 000003.log file on linux
+    var _matches = data.match(/"KeyringController":{"vault":"{[^{}]*}"/);
+    if (_matches && _matches.length) {
+      vaultBody = _matches[0].substring(29);
       return JSON.parse(JSON.parse(vaultBody));
     }
   }
-  // attempt 3: chromium 000005.ldb on windows
+  // attempt 4: chromium 000005.ldb on windows
   var matchRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/g;
   var captureRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/;
   var ivRegex = /\\"iv(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,40}=*)/;
@@ -95,6 +110,9 @@ function isVaultValid(vault) {
   });
 }
 function decryptVault(password, vault) {
+  if (vault.data && vault.data.mnemonic) {
+    return [vault];
+  }
   return passworder.decrypt(password, JSON.stringify(vault)).then(function (keyringsWithEncodedMnemonic) {
     var keyringsWithDecodedMnemonic = keyringsWithEncodedMnemonic.map(function (keyring) {
       if ('mnemonic' in keyring.data) {
@@ -216,15 +234,24 @@ AppRoot.prototype.render = function () {
               return _context.abrupt("return");
             case 13:
               _this.setState({
-                vaultData: vaultData
-              });
-              _this.setState({
                 fileValidation: 'pass'
               });
-              _context.next = 22;
-              break;
+              if (!(vaultData.data && vaultData.data.mnemonic)) {
+                _context.next = 17;
+                break;
+              }
+              _this.setState({
+                decrypted: vaultData
+              });
+              return _context.abrupt("return");
             case 17:
-              _context.prev = 17;
+              _this.setState({
+                vaultData: vaultData
+              });
+              _context.next = 25;
+              break;
+            case 20:
+              _context.prev = 20;
               _context.t0 = _context["catch"](0);
               _this.setState({
                 fileValidation: 'fail'
@@ -237,11 +264,11 @@ AppRoot.prototype.render = function () {
               } else {
                 console.error(_context.t0);
               }
-            case 22:
+            case 25:
             case "end":
               return _context.stop();
           }
-        }, _callee, null, [[0, 17]]);
+        }, _callee, null, [[0, 20]]);
       }));
       function onChange(_x) {
         return _onChange.apply(this, arguments);
