@@ -135,7 +135,7 @@ module.exports = {
 };
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"@metamask/browser-passworder":14,"buffer":20}],2:[function(require,module,exports){
+},{"@metamask/browser-passworder":14,"buffer":91}],2:[function(require,module,exports){
 "use strict";
 
 function _typeof(obj) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (obj) { return typeof obj; } : function (obj) { return obj && "function" == typeof Symbol && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }, _typeof(obj); }
@@ -381,7 +381,7 @@ AppRoot.prototype.decrypt = function (event) {
   });
 };
 
-},{"./lib.js":1,"react":80,"react-hyperscript":46,"react-redux":66,"util":19}],3:[function(require,module,exports){
+},{"./lib.js":1,"react":158,"react-hyperscript":124,"react-redux":144,"util":90}],3:[function(require,module,exports){
 "use strict";
 
 var render = require('react-dom').render;
@@ -399,7 +399,7 @@ render(h(Root, {
   store: store
 }), container);
 
-},{"./app/root.js":2,"./lib/store":5,"react-dom":45,"react-hyperscript":46}],4:[function(require,module,exports){
+},{"./app/root.js":2,"./lib/store":5,"react-dom":123,"react-hyperscript":124}],4:[function(require,module,exports){
 "use strict";
 
 var extend = require('xtend');
@@ -412,7 +412,7 @@ module.exports = function (state, action) {
   return extend(state);
 };
 
-},{"xtend":95}],5:[function(require,module,exports){
+},{"xtend":174}],5:[function(require,module,exports){
 "use strict";
 
 var createStore = require('redux').createStore;
@@ -428,7 +428,7 @@ function configureStore(initialState) {
   return createStoreWithMiddleware(rootReducer, initialState);
 }
 
-},{"./reducers":4,"redux":83,"redux-logger":81,"redux-thunk":82}],6:[function(require,module,exports){
+},{"./reducers":4,"redux":161,"redux-logger":159,"redux-thunk":160}],6:[function(require,module,exports){
 var toPropertyKey = require("./toPropertyKey.js");
 function _defineProperty(obj, key, value) {
   key = toPropertyKey(key);
@@ -542,10 +542,23 @@ module.exports = _typeof, module.exports.__esModule = true, module.exports["defa
 (function (global,Buffer){(function (){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateSalt = exports.serializeBufferForStorage = exports.serializeBufferFromStorage = exports.keyFromPassword = exports.exportKey = exports.importKey = exports.decryptWithKey = exports.decryptWithDetail = exports.decrypt = exports.encryptWithKey = exports.encryptWithDetail = exports.encrypt = void 0;
+exports.isVaultUpdated = exports.updateVaultWithDetail = exports.updateVault = exports.generateSalt = exports.serializeBufferForStorage = exports.serializeBufferFromStorage = exports.keyFromPassword = exports.exportKey = exports.importKey = exports.decryptWithKey = exports.decryptWithDetail = exports.decrypt = exports.encryptWithKey = exports.encryptWithDetail = exports.encrypt = void 0;
+const utils_1 = require("@metamask/utils");
 const EXPORT_FORMAT = 'jwk';
 const DERIVED_KEY_FORMAT = 'AES-GCM';
 const STRING_ENCODING = 'utf-8';
+const OLD_DERIVATION_PARAMS = {
+    algorithm: 'PBKDF2',
+    params: {
+        iterations: 10000,
+    },
+};
+const DEFAULT_DERIVATION_PARAMS = {
+    algorithm: 'PBKDF2',
+    params: {
+        iterations: 900000,
+    },
+};
 /**
  * Encrypts a data object that can be any serializable value using
  * a provided password.
@@ -554,10 +567,11 @@ const STRING_ENCODING = 'utf-8';
  * @param dataObj - The data to encrypt.
  * @param key - The CryptoKey to encrypt with.
  * @param salt - The salt to use to encrypt.
+ * @param keyDerivationOptions - The options to use for key derivation.
  * @returns The encrypted vault.
  */
-async function encrypt(password, dataObj, key, salt = generateSalt()) {
-    const cryptoKey = key || (await keyFromPassword(password, salt));
+async function encrypt(password, dataObj, key, salt = generateSalt(), keyDerivationOptions = DEFAULT_DERIVATION_PARAMS) {
+    const cryptoKey = key || (await keyFromPassword(password, salt, false, keyDerivationOptions));
     const payload = await encryptWithKey(cryptoKey, dataObj);
     payload.salt = salt;
     return JSON.stringify(payload);
@@ -570,10 +584,11 @@ exports.encrypt = encrypt;
  * @param password - A password to use for encryption.
  * @param dataObj - The data to encrypt.
  * @param salt - The salt used to encrypt.
+ * @param keyDerivationOptions - The options to use for key derivation.
  * @returns The vault and exported key string.
  */
-async function encryptWithDetail(password, dataObj, salt = generateSalt()) {
-    const key = await keyFromPassword(password, salt, true);
+async function encryptWithDetail(password, dataObj, salt = generateSalt(), keyDerivationOptions = DEFAULT_DERIVATION_PARAMS) {
+    const key = await keyFromPassword(password, salt, true, keyDerivationOptions);
     const exportedKeyString = await exportKey(key);
     const vault = await encrypt(password, dataObj, key, salt);
     return {
@@ -587,14 +602,15 @@ exports.encryptWithDetail = encryptWithDetail;
  * provided CryptoKey and returns an object containing the cypher text and
  * the initialization vector used.
  *
- * @param key - The CryptoKey to encrypt with.
+ * @param encryptionKey - The CryptoKey to encrypt with.
  * @param dataObj - A serializable JavaScript object to encrypt.
  * @returns The encrypted data.
  */
-async function encryptWithKey(key, dataObj) {
+async function encryptWithKey(encryptionKey, dataObj) {
     const data = JSON.stringify(dataObj);
     const dataBuffer = Buffer.from(data, STRING_ENCODING);
     const vector = global.crypto.getRandomValues(new Uint8Array(16));
+    const key = unwrapKey(encryptionKey);
     const buf = await global.crypto.subtle.encrypt({
         name: DERIVED_KEY_FORMAT,
         iv: vector,
@@ -602,10 +618,14 @@ async function encryptWithKey(key, dataObj) {
     const buffer = new Uint8Array(buf);
     const vectorStr = Buffer.from(vector).toString('base64');
     const vaultStr = Buffer.from(buffer).toString('base64');
-    return {
+    const encryptionResult = {
         data: vaultStr,
         iv: vectorStr,
     };
+    if (isEncryptionKey(encryptionKey)) {
+        encryptionResult.keyMetadata = encryptionKey.derivationOptions;
+    }
+    return encryptionResult;
 }
 exports.encryptWithKey = encryptWithKey;
 /**
@@ -614,13 +634,14 @@ exports.encryptWithKey = encryptWithKey;
  *
  * @param password - The password to decrypt with.
  * @param text - The cypher text to decrypt.
- * @param key - The key to decrypt with.
+ * @param encryptionKey - The key to decrypt with.
  * @returns The decrypted data.
  */
-async function decrypt(password, text, key) {
+async function decrypt(password, text, encryptionKey) {
     const payload = JSON.parse(text);
-    const { salt } = payload;
-    const cryptoKey = key || (await keyFromPassword(password, salt));
+    const { salt, keyMetadata } = payload;
+    const cryptoKey = unwrapKey(encryptionKey ||
+        (await keyFromPassword(password, salt, false, keyMetadata)));
     const result = await decryptWithKey(cryptoKey, payload);
     return result;
 }
@@ -635,8 +656,8 @@ exports.decrypt = decrypt;
  */
 async function decryptWithDetail(password, text) {
     const payload = JSON.parse(text);
-    const { salt } = payload;
-    const key = await keyFromPassword(password, salt, true);
+    const { salt, keyMetadata } = payload;
+    const key = await keyFromPassword(password, salt, true, keyMetadata);
     const exportedKeyString = await exportKey(key);
     const vault = await decrypt(password, text, key);
     return {
@@ -650,13 +671,14 @@ exports.decryptWithDetail = decryptWithDetail;
  * Given a CryptoKey and an EncryptionResult object containing the initialization
  * vector (iv) and data to decrypt, return the resulting decrypted value.
  *
- * @param key - The CryptoKey to decrypt with.
+ * @param encryptionKey - The CryptoKey to decrypt with.
  * @param payload - The payload to decrypt, returned from an encryption method.
  * @returns The decrypted data.
  */
-async function decryptWithKey(key, payload) {
+async function decryptWithKey(encryptionKey, payload) {
     const encryptedData = Buffer.from(payload.data, 'base64');
     const vector = Buffer.from(payload.iv, 'base64');
+    const key = unwrapKey(encryptionKey);
     let decryptedObj;
     try {
         const result = await crypto.subtle.decrypt({ name: DERIVED_KEY_FORMAT, iv: vector }, key, encryptedData);
@@ -673,45 +695,58 @@ exports.decryptWithKey = decryptWithKey;
 /**
  * Receives an exported CryptoKey string and creates a key.
  *
+ * This function supports both JsonWebKey's and exported EncryptionKey's.
+ * It will return a CryptoKey for the former, and an EncryptionKey for the latter.
+ *
  * @param keyString - The key string to import.
- * @returns A CryptoKey.
+ * @returns An EncryptionKey or a CryptoKey.
  */
 async function importKey(keyString) {
-    const key = await window.crypto.subtle.importKey(EXPORT_FORMAT, JSON.parse(keyString), DERIVED_KEY_FORMAT, true, ['encrypt', 'decrypt']);
-    return key;
+    const exportedEncryptionKey = JSON.parse(keyString);
+    if (isExportedEncryptionKey(exportedEncryptionKey)) {
+        return {
+            key: await window.crypto.subtle.importKey(EXPORT_FORMAT, exportedEncryptionKey.key, DERIVED_KEY_FORMAT, true, ['encrypt', 'decrypt']),
+            derivationOptions: exportedEncryptionKey.derivationOptions,
+        };
+    }
+    return await window.crypto.subtle.importKey(EXPORT_FORMAT, exportedEncryptionKey, DERIVED_KEY_FORMAT, true, ['encrypt', 'decrypt']);
 }
 exports.importKey = importKey;
 /**
- * Receives an exported CryptoKey string, creates a key,
- * and decrypts cipher text with the reconstructed key.
+ * Exports a key string from a CryptoKey or from an
+ * EncryptionKey instance.
  *
- * @param key - The CryptoKey to export.
+ * @param encryptionKey - The CryptoKey or EncryptionKey to export.
  * @returns A key string.
  */
-async function exportKey(key) {
-    const exportedKey = await window.crypto.subtle.exportKey(EXPORT_FORMAT, key);
-    return JSON.stringify(exportedKey);
+async function exportKey(encryptionKey) {
+    if (isEncryptionKey(encryptionKey)) {
+        return JSON.stringify({
+            key: await window.crypto.subtle.exportKey(EXPORT_FORMAT, encryptionKey.key),
+            derivationOptions: encryptionKey.derivationOptions,
+        });
+    }
+    return JSON.stringify(await window.crypto.subtle.exportKey(EXPORT_FORMAT, encryptionKey));
 }
 exports.exportKey = exportKey;
-/**
- * Generate a CryptoKey from a password and random salt.
- *
- * @param password - The password to use to generate key.
- * @param salt - The salt string to use in key derivation.
- * @param exportable - Should the derived key be exportable.
- * @returns A CryptoKey for encryption and decryption.
- */
-async function keyFromPassword(password, salt, exportable = false) {
+// The overloads are already documented.
+// eslint-disable-next-line jsdoc/require-jsdoc
+async function keyFromPassword(password, salt, exportable = false, opts = OLD_DERIVATION_PARAMS) {
     const passBuffer = Buffer.from(password, STRING_ENCODING);
     const saltBuffer = Buffer.from(salt, 'base64');
     const key = await global.crypto.subtle.importKey('raw', passBuffer, { name: 'PBKDF2' }, false, ['deriveBits', 'deriveKey']);
     const derivedKey = await global.crypto.subtle.deriveKey({
         name: 'PBKDF2',
         salt: saltBuffer,
-        iterations: 10000,
+        iterations: opts.params.iterations,
         hash: 'SHA-256',
     }, key, { name: DERIVED_KEY_FORMAT, length: 256 }, exportable, ['encrypt', 'decrypt']);
-    return derivedKey;
+    return opts
+        ? {
+            key: derivedKey,
+            derivationOptions: opts,
+        }
+        : derivedKey;
 }
 exports.keyFromPassword = keyFromPassword;
 /**
@@ -776,9 +811,4890 @@ function generateSalt(byteCount = 32) {
     return b64encoded;
 }
 exports.generateSalt = generateSalt;
+/**
+ * Updates the provided vault, re-encrypting
+ * data with a safer algorithm if one is available.
+ *
+ * If the provided vault is already using the latest available encryption method,
+ * it is returned as is.
+ *
+ * @param vault - The vault to update.
+ * @param password - The password to use for encryption.
+ * @param targetDerivationParams - The options to use for key derivation.
+ * @returns A promise resolving to the updated vault.
+ */
+async function updateVault(vault, password, targetDerivationParams = DEFAULT_DERIVATION_PARAMS) {
+    if (isVaultUpdated(vault, targetDerivationParams)) {
+        return vault;
+    }
+    return encrypt(password, await decrypt(password, vault), undefined, undefined, targetDerivationParams);
+}
+exports.updateVault = updateVault;
+/**
+ * Updates the provided vault and exported key, re-encrypting
+ * data with a safer algorithm if one is available.
+ *
+ * If the provided vault is already using the latest available encryption method,
+ * it is returned as is.
+ *
+ * @param encryptionResult - The encrypted data to update.
+ * @param password - The password to use for encryption.
+ * @param targetDerivationParams - The options to use for key derivation.
+ * @returns A promise resolving to the updated encrypted data and exported key.
+ */
+async function updateVaultWithDetail(encryptionResult, password, targetDerivationParams = DEFAULT_DERIVATION_PARAMS) {
+    if (isVaultUpdated(encryptionResult.vault, targetDerivationParams)) {
+        return encryptionResult;
+    }
+    return encryptWithDetail(password, await decrypt(password, encryptionResult.vault), undefined, targetDerivationParams);
+}
+exports.updateVaultWithDetail = updateVaultWithDetail;
+/**
+ * Checks if the provided key is an `EncryptionKey`.
+ *
+ * @param encryptionKey - The object to check.
+ * @returns Whether or not the key is an `EncryptionKey`.
+ */
+function isEncryptionKey(encryptionKey) {
+    return ((0, utils_1.isPlainObject)(encryptionKey) &&
+        (0, utils_1.hasProperty)(encryptionKey, 'key') &&
+        (0, utils_1.hasProperty)(encryptionKey, 'derivationOptions') &&
+        encryptionKey.key instanceof CryptoKey &&
+        isKeyDerivationOptions(encryptionKey.derivationOptions));
+}
+/**
+ * Checks if the provided object is a `KeyDerivationOptions`.
+ *
+ * @param derivationOptions - The object to check.
+ * @returns Whether or not the object is a `KeyDerivationOptions`.
+ */
+function isKeyDerivationOptions(derivationOptions) {
+    return ((0, utils_1.isPlainObject)(derivationOptions) &&
+        (0, utils_1.hasProperty)(derivationOptions, 'algorithm') &&
+        (0, utils_1.hasProperty)(derivationOptions, 'params'));
+}
+/**
+ * Checks if the provided key is an `ExportedEncryptionKey`.
+ *
+ * @param exportedKey - The object to check.
+ * @returns Whether or not the object is an `ExportedEncryptionKey`.
+ */
+function isExportedEncryptionKey(exportedKey) {
+    return ((0, utils_1.isPlainObject)(exportedKey) &&
+        (0, utils_1.hasProperty)(exportedKey, 'key') &&
+        (0, utils_1.hasProperty)(exportedKey, 'derivationOptions') &&
+        isKeyDerivationOptions(exportedKey.derivationOptions));
+}
+/**
+ * Returns the `CryptoKey` from the provided encryption key.
+ * If the provided key is a `CryptoKey`, it is returned as is.
+ *
+ * @param encryptionKey - The key to unwrap.
+ * @returns The `CryptoKey` from the provided encryption key.
+ */
+function unwrapKey(encryptionKey) {
+    return isEncryptionKey(encryptionKey) ? encryptionKey.key : encryptionKey;
+}
+/**
+ * Checks if the provided vault is an updated encryption format.
+ *
+ * @param vault - The vault to check.
+ * @param targetDerivationParams - The options to use for key derivation.
+ * @returns Whether or not the vault is an updated encryption format.
+ */
+function isVaultUpdated(vault, targetDerivationParams = DEFAULT_DERIVATION_PARAMS) {
+    const { keyMetadata } = JSON.parse(vault);
+    return (isKeyDerivationOptions(keyMetadata) &&
+        keyMetadata.algorithm === targetDerivationParams.algorithm &&
+        keyMetadata.params.iterations === targetDerivationParams.params.iterations);
+}
+exports.isVaultUpdated = isVaultUpdated;
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"buffer":20}],15:[function(require,module,exports){
+},{"@metamask/utils":35,"buffer":91}],15:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }// src/logging.ts
+var _debug = require('debug'); var _debug2 = _interopRequireDefault(_debug);
+var globalLogger = _debug2.default.call(void 0, "metamask");
+function createProjectLogger(projectName) {
+  return globalLogger.extend(projectName);
+}
+function createModuleLogger(projectLogger, moduleName) {
+  return projectLogger.extend(moduleName);
+}
+
+
+
+
+exports.createProjectLogger = createProjectLogger; exports.createModuleLogger = createModuleLogger;
+
+},{"debug":94}],16:[function(require,module,exports){
+"use strict";
+},{}],17:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});var __accessCheck = (obj, member, msg) => {
+  if (!member.has(obj))
+    throw TypeError("Cannot " + msg);
+};
+var __privateGet = (obj, member, getter) => {
+  __accessCheck(obj, member, "read from private field");
+  return getter ? getter.call(obj) : member.get(obj);
+};
+var __privateAdd = (obj, member, value) => {
+  if (member.has(obj))
+    throw TypeError("Cannot add the same private member more than once");
+  member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+};
+var __privateSet = (obj, member, value, setter) => {
+  __accessCheck(obj, member, "write to private field");
+  setter ? setter.call(obj, value) : member.set(obj, value);
+  return value;
+};
+
+
+
+
+
+exports.__privateGet = __privateGet; exports.__privateAdd = __privateAdd; exports.__privateSet = __privateSet;
+
+},{}],18:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+// src/versions.ts
+
+
+
+
+
+
+var _semver = require('semver');
+var _superstruct = require('superstruct');
+var VersionStruct = _superstruct.refine.call(void 0, 
+  _superstruct.string.call(void 0, ),
+  "Version",
+  (value) => {
+    if (_semver.valid.call(void 0, value) === null) {
+      return `Expected SemVer version, got "${value}"`;
+    }
+    return true;
+  }
+);
+var VersionRangeStruct = _superstruct.refine.call(void 0, 
+  _superstruct.string.call(void 0, ),
+  "Version range",
+  (value) => {
+    if (_semver.validRange.call(void 0, value) === null) {
+      return `Expected SemVer range, got "${value}"`;
+    }
+    return true;
+  }
+);
+function isValidSemVerVersion(version) {
+  return _superstruct.is.call(void 0, version, VersionStruct);
+}
+function isValidSemVerRange(versionRange) {
+  return _superstruct.is.call(void 0, versionRange, VersionRangeStruct);
+}
+function assertIsSemVerVersion(version) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, version, VersionStruct);
+}
+function assertIsSemVerRange(range) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, range, VersionRangeStruct);
+}
+function gtVersion(version1, version2) {
+  return _semver.gt.call(void 0, version1, version2);
+}
+function gtRange(version, range) {
+  return _semver.gtr.call(void 0, version, range);
+}
+function satisfiesVersionRange(version, versionRange) {
+  return _semver.satisfies.call(void 0, version, versionRange, {
+    includePrerelease: true
+  });
+}
+
+
+
+
+
+
+
+
+
+
+
+exports.VersionStruct = VersionStruct; exports.VersionRangeStruct = VersionRangeStruct; exports.isValidSemVerVersion = isValidSemVerVersion; exports.isValidSemVerRange = isValidSemVerRange; exports.assertIsSemVerVersion = assertIsSemVerVersion; exports.assertIsSemVerRange = assertIsSemVerRange; exports.gtVersion = gtVersion; exports.gtRange = gtRange; exports.satisfiesVersionRange = satisfiesVersionRange;
+
+},{"./chunk-6ZDHSOUV.js":21,"semver":63,"superstruct":165}],19:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});// src/time.ts
+var Duration = /* @__PURE__ */ ((Duration2) => {
+  Duration2[Duration2["Millisecond"] = 1] = "Millisecond";
+  Duration2[Duration2["Second"] = 1e3] = "Second";
+  Duration2[Duration2["Minute"] = 6e4] = "Minute";
+  Duration2[Duration2["Hour"] = 36e5] = "Hour";
+  Duration2[Duration2["Day"] = 864e5] = "Day";
+  Duration2[Duration2["Week"] = 6048e5] = "Week";
+  Duration2[Duration2["Year"] = 31536e6] = "Year";
+  return Duration2;
+})(Duration || {});
+var isNonNegativeInteger = (number) => Number.isInteger(number) && number >= 0;
+var assertIsNonNegativeInteger = (number, name) => {
+  if (!isNonNegativeInteger(number)) {
+    throw new Error(
+      `"${name}" must be a non-negative integer. Received: "${number}".`
+    );
+  }
+};
+function inMilliseconds(count, duration) {
+  assertIsNonNegativeInteger(count, "count");
+  return count * duration;
+}
+function timeSince(timestamp) {
+  assertIsNonNegativeInteger(timestamp, "timestamp");
+  return Date.now() - timestamp;
+}
+
+
+
+
+
+exports.Duration = Duration; exports.inMilliseconds = inMilliseconds; exports.timeSince = timeSince;
+
+},{}],20:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } }
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+// src/base64.ts
+var _superstruct = require('superstruct');
+var base64 = (struct, options = {}) => {
+  const paddingRequired = _nullishCoalesce(options.paddingRequired, () => ( false));
+  const characterSet = _nullishCoalesce(options.characterSet, () => ( "base64"));
+  let letters;
+  if (characterSet === "base64") {
+    letters = String.raw`[A-Za-z0-9+\/]`;
+  } else {
+    _chunk6ZDHSOUVjs.assert.call(void 0, characterSet === "base64url");
+    letters = String.raw`[-_A-Za-z0-9]`;
+  }
+  let re;
+  if (paddingRequired) {
+    re = new RegExp(
+      `^(?:${letters}{4})*(?:${letters}{3}=|${letters}{2}==)?$`,
+      "u"
+    );
+  } else {
+    re = new RegExp(
+      `^(?:${letters}{4})*(?:${letters}{2,3}|${letters}{3}=|${letters}{2}==)?$`,
+      "u"
+    );
+  }
+  return _superstruct.pattern.call(void 0, struct, re);
+};
+
+
+
+exports.base64 = base64;
+
+},{"./chunk-6ZDHSOUV.js":21,"superstruct":165}],21:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }
+
+var _chunkIZC266HSjs = require('./chunk-IZC266HS.js');
+
+// src/assert.ts
+var _superstruct = require('superstruct');
+function isConstructable(fn) {
+  return Boolean(typeof _optionalChain([fn, 'optionalAccess', _ => _.prototype, 'optionalAccess', _2 => _2.constructor, 'optionalAccess', _3 => _3.name]) === "string");
+}
+function getErrorMessageWithoutTrailingPeriod(error) {
+  return _chunkIZC266HSjs.getErrorMessage.call(void 0, error).replace(/\.$/u, "");
+}
+function getError(ErrorWrapper, message) {
+  if (isConstructable(ErrorWrapper)) {
+    return new ErrorWrapper({
+      message
+    });
+  }
+  return ErrorWrapper({
+    message
+  });
+}
+var AssertionError = class extends Error {
+  constructor(options) {
+    super(options.message);
+    this.code = "ERR_ASSERTION";
+  }
+};
+function assert(value, message = "Assertion failed.", ErrorWrapper = AssertionError) {
+  if (!value) {
+    if (message instanceof Error) {
+      throw message;
+    }
+    throw getError(ErrorWrapper, message);
+  }
+}
+function assertStruct(value, struct, errorPrefix = "Assertion failed", ErrorWrapper = AssertionError) {
+  try {
+    _superstruct.assert.call(void 0, value, struct);
+  } catch (error) {
+    throw getError(
+      ErrorWrapper,
+      `${errorPrefix}: ${getErrorMessageWithoutTrailingPeriod(error)}.`
+    );
+  }
+}
+function assertExhaustive(_object) {
+  throw new Error(
+    "Invalid branch reached. Should be detected during compilation."
+  );
+}
+
+
+
+
+
+
+exports.AssertionError = AssertionError; exports.assert = assert; exports.assertStruct = assertStruct; exports.assertExhaustive = assertExhaustive;
+
+},{"./chunk-IZC266HS.js":25,"superstruct":165}],22:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+
+
+var _chunkQEPVHEP7js = require('./chunk-QEPVHEP7.js');
+
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+// src/coercers.ts
+
+
+
+
+
+
+
+
+
+var _superstruct = require('superstruct');
+var NumberLikeStruct = _superstruct.union.call(void 0, [_superstruct.number.call(void 0, ), _superstruct.bigint.call(void 0, ), _superstruct.string.call(void 0, ), _chunkQEPVHEP7js.StrictHexStruct]);
+var NumberCoercer = _superstruct.coerce.call(void 0, _superstruct.number.call(void 0, ), NumberLikeStruct, Number);
+var BigIntCoercer = _superstruct.coerce.call(void 0, _superstruct.bigint.call(void 0, ), NumberLikeStruct, BigInt);
+var BytesLikeStruct = _superstruct.union.call(void 0, [_chunkQEPVHEP7js.StrictHexStruct, _superstruct.instance.call(void 0, Uint8Array)]);
+var BytesCoercer = _superstruct.coerce.call(void 0, 
+  _superstruct.instance.call(void 0, Uint8Array),
+  _superstruct.union.call(void 0, [_chunkQEPVHEP7js.StrictHexStruct]),
+  _chunkQEPVHEP7js.hexToBytes
+);
+var HexCoercer = _superstruct.coerce.call(void 0, _chunkQEPVHEP7js.StrictHexStruct, _superstruct.instance.call(void 0, Uint8Array), _chunkQEPVHEP7js.bytesToHex);
+function createNumber(value) {
+  try {
+    const result = _superstruct.create.call(void 0, value, NumberCoercer);
+    _chunk6ZDHSOUVjs.assert.call(void 0, 
+      Number.isFinite(result),
+      `Expected a number-like value, got "${value}".`
+    );
+    return result;
+  } catch (error) {
+    if (error instanceof _superstruct.StructError) {
+      throw new Error(`Expected a number-like value, got "${value}".`);
+    }
+    throw error;
+  }
+}
+function createBigInt(value) {
+  try {
+    return _superstruct.create.call(void 0, value, BigIntCoercer);
+  } catch (error) {
+    if (error instanceof _superstruct.StructError) {
+      throw new Error(
+        `Expected a number-like value, got "${String(error.value)}".`
+      );
+    }
+    throw error;
+  }
+}
+function createBytes(value) {
+  if (typeof value === "string" && value.toLowerCase() === "0x") {
+    return new Uint8Array();
+  }
+  try {
+    return _superstruct.create.call(void 0, value, BytesCoercer);
+  } catch (error) {
+    if (error instanceof _superstruct.StructError) {
+      throw new Error(
+        `Expected a bytes-like value, got "${String(error.value)}".`
+      );
+    }
+    throw error;
+  }
+}
+function createHex(value) {
+  if (value instanceof Uint8Array && value.length === 0 || typeof value === "string" && value.toLowerCase() === "0x") {
+    return "0x";
+  }
+  try {
+    return _superstruct.create.call(void 0, value, HexCoercer);
+  } catch (error) {
+    if (error instanceof _superstruct.StructError) {
+      throw new Error(
+        `Expected a bytes-like value, got "${String(error.value)}".`
+      );
+    }
+    throw error;
+  }
+}
+
+
+
+
+
+
+exports.createNumber = createNumber; exports.createBigInt = createBigInt; exports.createBytes = createBytes; exports.createHex = createHex;
+
+},{"./chunk-6ZDHSOUV.js":21,"./chunk-QEPVHEP7.js":28,"superstruct":165}],23:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+var _chunk6NZW4WK4js = require('./chunk-6NZW4WK4.js');
+
+// src/checksum.ts
+var _superstruct = require('superstruct');
+var ChecksumStruct = _superstruct.size.call(void 0, 
+  _chunk6NZW4WK4js.base64.call(void 0, _superstruct.string.call(void 0, ), { paddingRequired: true }),
+  44,
+  44
+);
+
+
+
+exports.ChecksumStruct = ChecksumStruct;
+
+},{"./chunk-6NZW4WK4.js":20,"superstruct":165}],24:[function(require,module,exports){
+"use strict";
+},{}],25:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+
+var _chunkQVEKZRZ2js = require('./chunk-QVEKZRZ2.js');
+
+// src/errors.ts
+var _ponycause = require('pony-cause');
+function isError(error) {
+  return error instanceof Error || _chunkQVEKZRZ2js.isObject.call(void 0, error) && error.constructor.name === "Error";
+}
+function isErrorWithCode(error) {
+  return typeof error === "object" && error !== null && "code" in error;
+}
+function isErrorWithMessage(error) {
+  return typeof error === "object" && error !== null && "message" in error;
+}
+function isErrorWithStack(error) {
+  return typeof error === "object" && error !== null && "stack" in error;
+}
+function getErrorMessage(error) {
+  if (isErrorWithMessage(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  if (_chunkQVEKZRZ2js.isNullOrUndefined.call(void 0, error)) {
+    return "";
+  }
+  return String(error);
+}
+function wrapError(originalError, message) {
+  if (isError(originalError)) {
+    let error;
+    if (Error.length === 2) {
+      error = new Error(message, { cause: originalError });
+    } else {
+      error = new (0, _ponycause.ErrorWithCause)(message, { cause: originalError });
+    }
+    if (isErrorWithCode(originalError)) {
+      error.code = originalError.code;
+    }
+    return error;
+  }
+  if (message.length > 0) {
+    return new Error(`${String(originalError)}: ${message}`);
+  }
+  return new Error(String(originalError));
+}
+
+
+
+
+
+
+
+exports.isErrorWithCode = isErrorWithCode; exports.isErrorWithMessage = isErrorWithMessage; exports.isErrorWithStack = isErrorWithStack; exports.getErrorMessage = getErrorMessage; exports.wrapError = wrapError;
+
+},{"./chunk-QVEKZRZ2.js":29,"pony-cause":117}],26:[function(require,module,exports){
+"use strict";
+},{}],27:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+
+var _chunkQVEKZRZ2js = require('./chunk-QVEKZRZ2.js');
+
+// src/json.ts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var _superstruct = require('superstruct');
+var object = (schema) => (
+  // The type is slightly different from a regular object struct, because we
+  // want to make properties with `undefined` in their type optional, but not
+  // `undefined` itself. This means that we need a type cast.
+  _superstruct.object.call(void 0, schema)
+);
+function hasOptional({ path, branch }) {
+  const field = path[path.length - 1];
+  return _chunkQVEKZRZ2js.hasProperty.call(void 0, branch[branch.length - 2], field);
+}
+function exactOptional(struct) {
+  return new (0, _superstruct.Struct)({
+    ...struct,
+    type: `optional ${struct.type}`,
+    validator: (value, context) => !hasOptional(context) || struct.validator(value, context),
+    refiner: (value, context) => !hasOptional(context) || struct.refiner(value, context)
+  });
+}
+var finiteNumber = () => _superstruct.define.call(void 0, "finite number", (value) => {
+  return _superstruct.is.call(void 0, value, _superstruct.number.call(void 0, )) && Number.isFinite(value);
+});
+var UnsafeJsonStruct = _superstruct.union.call(void 0, [
+  _superstruct.literal.call(void 0, null),
+  _superstruct.boolean.call(void 0, ),
+  finiteNumber(),
+  _superstruct.string.call(void 0, ),
+  _superstruct.array.call(void 0, _superstruct.lazy.call(void 0, () => UnsafeJsonStruct)),
+  _superstruct.record.call(void 0, 
+    _superstruct.string.call(void 0, ),
+    _superstruct.lazy.call(void 0, () => UnsafeJsonStruct)
+  )
+]);
+var JsonStruct = _superstruct.coerce.call(void 0, UnsafeJsonStruct, _superstruct.any.call(void 0, ), (value) => {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, value, UnsafeJsonStruct);
+  return JSON.parse(
+    JSON.stringify(value, (propKey, propValue) => {
+      if (propKey === "__proto__" || propKey === "constructor") {
+        return void 0;
+      }
+      return propValue;
+    })
+  );
+});
+function isValidJson(value) {
+  try {
+    getSafeJson(value);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function getSafeJson(value) {
+  return _superstruct.create.call(void 0, value, JsonStruct);
+}
+function getJsonSize(value) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, value, JsonStruct, "Invalid JSON value");
+  const json = JSON.stringify(value);
+  return new TextEncoder().encode(json).byteLength;
+}
+var jsonrpc2 = "2.0";
+var JsonRpcVersionStruct = _superstruct.literal.call(void 0, jsonrpc2);
+var JsonRpcIdStruct = _superstruct.nullable.call(void 0, _superstruct.union.call(void 0, [_superstruct.number.call(void 0, ), _superstruct.string.call(void 0, )]));
+var JsonRpcErrorStruct = object({
+  code: _superstruct.integer.call(void 0, ),
+  message: _superstruct.string.call(void 0, ),
+  data: exactOptional(JsonStruct),
+  stack: exactOptional(_superstruct.string.call(void 0, ))
+});
+var JsonRpcParamsStruct = _superstruct.union.call(void 0, [_superstruct.record.call(void 0, _superstruct.string.call(void 0, ), JsonStruct), _superstruct.array.call(void 0, JsonStruct)]);
+var JsonRpcRequestStruct = object({
+  id: JsonRpcIdStruct,
+  jsonrpc: JsonRpcVersionStruct,
+  method: _superstruct.string.call(void 0, ),
+  params: exactOptional(JsonRpcParamsStruct)
+});
+var JsonRpcNotificationStruct = object({
+  jsonrpc: JsonRpcVersionStruct,
+  method: _superstruct.string.call(void 0, ),
+  params: exactOptional(JsonRpcParamsStruct)
+});
+function isJsonRpcNotification(value) {
+  return _superstruct.is.call(void 0, value, JsonRpcNotificationStruct);
+}
+function assertIsJsonRpcNotification(value, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    value,
+    JsonRpcNotificationStruct,
+    "Invalid JSON-RPC notification",
+    ErrorWrapper
+  );
+}
+function isJsonRpcRequest(value) {
+  return _superstruct.is.call(void 0, value, JsonRpcRequestStruct);
+}
+function assertIsJsonRpcRequest(value, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    value,
+    JsonRpcRequestStruct,
+    "Invalid JSON-RPC request",
+    ErrorWrapper
+  );
+}
+var PendingJsonRpcResponseStruct = _superstruct.object.call(void 0, {
+  id: JsonRpcIdStruct,
+  jsonrpc: JsonRpcVersionStruct,
+  result: _superstruct.optional.call(void 0, _superstruct.unknown.call(void 0, )),
+  error: _superstruct.optional.call(void 0, JsonRpcErrorStruct)
+});
+var JsonRpcSuccessStruct = object({
+  id: JsonRpcIdStruct,
+  jsonrpc: JsonRpcVersionStruct,
+  result: JsonStruct
+});
+var JsonRpcFailureStruct = object({
+  id: JsonRpcIdStruct,
+  jsonrpc: JsonRpcVersionStruct,
+  error: JsonRpcErrorStruct
+});
+var JsonRpcResponseStruct = _superstruct.union.call(void 0, [
+  JsonRpcSuccessStruct,
+  JsonRpcFailureStruct
+]);
+function isPendingJsonRpcResponse(response) {
+  return _superstruct.is.call(void 0, response, PendingJsonRpcResponseStruct);
+}
+function assertIsPendingJsonRpcResponse(response, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    response,
+    PendingJsonRpcResponseStruct,
+    "Invalid pending JSON-RPC response",
+    ErrorWrapper
+  );
+}
+function isJsonRpcResponse(response) {
+  return _superstruct.is.call(void 0, response, JsonRpcResponseStruct);
+}
+function assertIsJsonRpcResponse(value, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    value,
+    JsonRpcResponseStruct,
+    "Invalid JSON-RPC response",
+    ErrorWrapper
+  );
+}
+function isJsonRpcSuccess(value) {
+  return _superstruct.is.call(void 0, value, JsonRpcSuccessStruct);
+}
+function assertIsJsonRpcSuccess(value, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    value,
+    JsonRpcSuccessStruct,
+    "Invalid JSON-RPC success response",
+    ErrorWrapper
+  );
+}
+function isJsonRpcFailure(value) {
+  return _superstruct.is.call(void 0, value, JsonRpcFailureStruct);
+}
+function assertIsJsonRpcFailure(value, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    value,
+    JsonRpcFailureStruct,
+    "Invalid JSON-RPC failure response",
+    ErrorWrapper
+  );
+}
+function isJsonRpcError(value) {
+  return _superstruct.is.call(void 0, value, JsonRpcErrorStruct);
+}
+function assertIsJsonRpcError(value, ErrorWrapper) {
+  _chunk6ZDHSOUVjs.assertStruct.call(void 0, 
+    value,
+    JsonRpcErrorStruct,
+    "Invalid JSON-RPC error",
+    ErrorWrapper
+  );
+}
+function getJsonRpcIdValidator(options) {
+  const { permitEmptyString, permitFractions, permitNull } = {
+    permitEmptyString: true,
+    permitFractions: false,
+    permitNull: true,
+    ...options
+  };
+  const isValidJsonRpcId = (id) => {
+    return Boolean(
+      typeof id === "number" && (permitFractions || Number.isInteger(id)) || typeof id === "string" && (permitEmptyString || id.length > 0) || permitNull && id === null
+    );
+  };
+  return isValidJsonRpcId;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exports.object = object; exports.exactOptional = exactOptional; exports.UnsafeJsonStruct = UnsafeJsonStruct; exports.JsonStruct = JsonStruct; exports.isValidJson = isValidJson; exports.getSafeJson = getSafeJson; exports.getJsonSize = getJsonSize; exports.jsonrpc2 = jsonrpc2; exports.JsonRpcVersionStruct = JsonRpcVersionStruct; exports.JsonRpcIdStruct = JsonRpcIdStruct; exports.JsonRpcErrorStruct = JsonRpcErrorStruct; exports.JsonRpcParamsStruct = JsonRpcParamsStruct; exports.JsonRpcRequestStruct = JsonRpcRequestStruct; exports.JsonRpcNotificationStruct = JsonRpcNotificationStruct; exports.isJsonRpcNotification = isJsonRpcNotification; exports.assertIsJsonRpcNotification = assertIsJsonRpcNotification; exports.isJsonRpcRequest = isJsonRpcRequest; exports.assertIsJsonRpcRequest = assertIsJsonRpcRequest; exports.PendingJsonRpcResponseStruct = PendingJsonRpcResponseStruct; exports.JsonRpcSuccessStruct = JsonRpcSuccessStruct; exports.JsonRpcFailureStruct = JsonRpcFailureStruct; exports.JsonRpcResponseStruct = JsonRpcResponseStruct; exports.isPendingJsonRpcResponse = isPendingJsonRpcResponse; exports.assertIsPendingJsonRpcResponse = assertIsPendingJsonRpcResponse; exports.isJsonRpcResponse = isJsonRpcResponse; exports.assertIsJsonRpcResponse = assertIsJsonRpcResponse; exports.isJsonRpcSuccess = isJsonRpcSuccess; exports.assertIsJsonRpcSuccess = assertIsJsonRpcSuccess; exports.isJsonRpcFailure = isJsonRpcFailure; exports.assertIsJsonRpcFailure = assertIsJsonRpcFailure; exports.isJsonRpcError = isJsonRpcError; exports.assertIsJsonRpcError = assertIsJsonRpcError; exports.getJsonRpcIdValidator = getJsonRpcIdValidator;
+
+},{"./chunk-6ZDHSOUV.js":21,"./chunk-QVEKZRZ2.js":29,"superstruct":165}],28:[function(require,module,exports){
+(function (Buffer){(function (){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+// src/hex.ts
+var _sha3 = require('@noble/hashes/sha3');
+var _superstruct = require('superstruct');
+
+// src/bytes.ts
+var _base = require('@scure/base');
+var HEX_MINIMUM_NUMBER_CHARACTER = 48;
+var HEX_MAXIMUM_NUMBER_CHARACTER = 58;
+var HEX_CHARACTER_OFFSET = 87;
+function getPrecomputedHexValuesBuilder() {
+  const lookupTable = [];
+  return () => {
+    if (lookupTable.length === 0) {
+      for (let i = 0; i < 256; i++) {
+        lookupTable.push(i.toString(16).padStart(2, "0"));
+      }
+    }
+    return lookupTable;
+  };
+}
+var getPrecomputedHexValues = getPrecomputedHexValuesBuilder();
+function isBytes(value) {
+  return value instanceof Uint8Array;
+}
+function assertIsBytes(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, isBytes(value), "Value must be a Uint8Array.");
+}
+function bytesToHex(bytes) {
+  assertIsBytes(bytes);
+  if (bytes.length === 0) {
+    return "0x";
+  }
+  const lookupTable = getPrecomputedHexValues();
+  const hexadecimal = new Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    hexadecimal[i] = lookupTable[bytes[i]];
+  }
+  return add0x(hexadecimal.join(""));
+}
+function bytesToBigInt(bytes) {
+  assertIsBytes(bytes);
+  const hexadecimal = bytesToHex(bytes);
+  return BigInt(hexadecimal);
+}
+function bytesToSignedBigInt(bytes) {
+  assertIsBytes(bytes);
+  let value = BigInt(0);
+  for (const byte of bytes) {
+    value = (value << BigInt(8)) + BigInt(byte);
+  }
+  return BigInt.asIntN(bytes.length * 8, value);
+}
+function bytesToNumber(bytes) {
+  assertIsBytes(bytes);
+  const bigint = bytesToBigInt(bytes);
+  _chunk6ZDHSOUVjs.assert.call(void 0, 
+    bigint <= BigInt(Number.MAX_SAFE_INTEGER),
+    "Number is not a safe integer. Use `bytesToBigInt` instead."
+  );
+  return Number(bigint);
+}
+function bytesToString(bytes) {
+  assertIsBytes(bytes);
+  return new TextDecoder().decode(bytes);
+}
+function bytesToBase64(bytes) {
+  assertIsBytes(bytes);
+  return _base.base64.encode(bytes);
+}
+function hexToBytes(value) {
+  if (_optionalChain([value, 'optionalAccess', _ => _.toLowerCase, 'optionalCall', _2 => _2()]) === "0x") {
+    return new Uint8Array();
+  }
+  assertIsHexString(value);
+  const strippedValue = remove0x(value).toLowerCase();
+  const normalizedValue = strippedValue.length % 2 === 0 ? strippedValue : `0${strippedValue}`;
+  const bytes = new Uint8Array(normalizedValue.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    const c1 = normalizedValue.charCodeAt(i * 2);
+    const c2 = normalizedValue.charCodeAt(i * 2 + 1);
+    const n1 = c1 - (c1 < HEX_MAXIMUM_NUMBER_CHARACTER ? HEX_MINIMUM_NUMBER_CHARACTER : HEX_CHARACTER_OFFSET);
+    const n2 = c2 - (c2 < HEX_MAXIMUM_NUMBER_CHARACTER ? HEX_MINIMUM_NUMBER_CHARACTER : HEX_CHARACTER_OFFSET);
+    bytes[i] = n1 * 16 + n2;
+  }
+  return bytes;
+}
+function bigIntToBytes(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "bigint", "Value must be a bigint.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, value >= BigInt(0), "Value must be a non-negative bigint.");
+  const hexadecimal = value.toString(16);
+  return hexToBytes(hexadecimal);
+}
+function bigIntFits(value, bytes) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, bytes > 0);
+  const mask = value >> BigInt(31);
+  return !((~value & mask) + (value & ~mask) >> BigInt(bytes * 8 + ~0));
+}
+function signedBigIntToBytes(value, byteLength) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "bigint", "Value must be a bigint.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof byteLength === "number", "Byte length must be a number.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, byteLength > 0, "Byte length must be greater than 0.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, 
+    bigIntFits(value, byteLength),
+    "Byte length is too small to represent the given value."
+  );
+  let numberValue = value;
+  const bytes = new Uint8Array(byteLength);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = Number(BigInt.asUintN(8, numberValue));
+    numberValue >>= BigInt(8);
+  }
+  return bytes.reverse();
+}
+function numberToBytes(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "number", "Value must be a number.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, value >= 0, "Value must be a non-negative number.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, 
+    Number.isSafeInteger(value),
+    "Value is not a safe integer. Use `bigIntToBytes` instead."
+  );
+  const hexadecimal = value.toString(16);
+  return hexToBytes(hexadecimal);
+}
+function stringToBytes(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "string", "Value must be a string.");
+  return new TextEncoder().encode(value);
+}
+function base64ToBytes(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "string", "Value must be a string.");
+  return _base.base64.decode(value);
+}
+function valueToBytes(value) {
+  if (typeof value === "bigint") {
+    return bigIntToBytes(value);
+  }
+  if (typeof value === "number") {
+    return numberToBytes(value);
+  }
+  if (typeof value === "string") {
+    if (value.startsWith("0x")) {
+      return hexToBytes(value);
+    }
+    return stringToBytes(value);
+  }
+  if (isBytes(value)) {
+    return value;
+  }
+  throw new TypeError(`Unsupported value type: "${typeof value}".`);
+}
+function concatBytes(values) {
+  const normalizedValues = new Array(values.length);
+  let byteLength = 0;
+  for (let i = 0; i < values.length; i++) {
+    const value = valueToBytes(values[i]);
+    normalizedValues[i] = value;
+    byteLength += value.length;
+  }
+  const bytes = new Uint8Array(byteLength);
+  for (let i = 0, offset = 0; i < normalizedValues.length; i++) {
+    bytes.set(normalizedValues[i], offset);
+    offset += normalizedValues[i].length;
+  }
+  return bytes;
+}
+function createDataView(bytes) {
+  if (typeof Buffer !== "undefined" && bytes instanceof Buffer) {
+    const buffer = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    );
+    return new DataView(buffer);
+  }
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+// src/hex.ts
+var HexStruct = _superstruct.pattern.call(void 0, _superstruct.string.call(void 0, ), /^(?:0x)?[0-9a-f]+$/iu);
+var StrictHexStruct = _superstruct.pattern.call(void 0, _superstruct.string.call(void 0, ), /^0x[0-9a-f]+$/iu);
+var HexAddressStruct = _superstruct.pattern.call(void 0, 
+  _superstruct.string.call(void 0, ),
+  /^0x[0-9a-f]{40}$/u
+);
+var HexChecksumAddressStruct = _superstruct.pattern.call(void 0, 
+  _superstruct.string.call(void 0, ),
+  /^0x[0-9a-fA-F]{40}$/u
+);
+function isHexString(value) {
+  return _superstruct.is.call(void 0, value, HexStruct);
+}
+function isStrictHexString(value) {
+  return _superstruct.is.call(void 0, value, StrictHexStruct);
+}
+function assertIsHexString(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, isHexString(value), "Value must be a hexadecimal string.");
+}
+function assertIsStrictHexString(value) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, 
+    isStrictHexString(value),
+    'Value must be a hexadecimal string, starting with "0x".'
+  );
+}
+function isValidHexAddress(possibleAddress) {
+  return _superstruct.is.call(void 0, possibleAddress, HexAddressStruct) || isValidChecksumAddress(possibleAddress);
+}
+function getChecksumAddress(address) {
+  _chunk6ZDHSOUVjs.assert.call(void 0, _superstruct.is.call(void 0, address, HexChecksumAddressStruct), "Invalid hex address.");
+  const unPrefixed = remove0x(address.toLowerCase());
+  const unPrefixedHash = remove0x(bytesToHex(_sha3.keccak_256.call(void 0, unPrefixed)));
+  return `0x${unPrefixed.split("").map((character, nibbleIndex) => {
+    const hashCharacter = unPrefixedHash[nibbleIndex];
+    _chunk6ZDHSOUVjs.assert.call(void 0, _superstruct.is.call(void 0, hashCharacter, _superstruct.string.call(void 0, )), "Hash shorter than address.");
+    return parseInt(hashCharacter, 16) > 7 ? character.toUpperCase() : character;
+  }).join("")}`;
+}
+function isValidChecksumAddress(possibleChecksum) {
+  if (!_superstruct.is.call(void 0, possibleChecksum, HexChecksumAddressStruct)) {
+    return false;
+  }
+  return getChecksumAddress(possibleChecksum) === possibleChecksum;
+}
+function add0x(hexadecimal) {
+  if (hexadecimal.startsWith("0x")) {
+    return hexadecimal;
+  }
+  if (hexadecimal.startsWith("0X")) {
+    return `0x${hexadecimal.substring(2)}`;
+  }
+  return `0x${hexadecimal}`;
+}
+function remove0x(hexadecimal) {
+  if (hexadecimal.startsWith("0x") || hexadecimal.startsWith("0X")) {
+    return hexadecimal.substring(2);
+  }
+  return hexadecimal;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exports.HexStruct = HexStruct; exports.StrictHexStruct = StrictHexStruct; exports.HexAddressStruct = HexAddressStruct; exports.HexChecksumAddressStruct = HexChecksumAddressStruct; exports.isHexString = isHexString; exports.isStrictHexString = isStrictHexString; exports.assertIsHexString = assertIsHexString; exports.assertIsStrictHexString = assertIsStrictHexString; exports.isValidHexAddress = isValidHexAddress; exports.getChecksumAddress = getChecksumAddress; exports.isValidChecksumAddress = isValidChecksumAddress; exports.add0x = add0x; exports.remove0x = remove0x; exports.isBytes = isBytes; exports.assertIsBytes = assertIsBytes; exports.bytesToHex = bytesToHex; exports.bytesToBigInt = bytesToBigInt; exports.bytesToSignedBigInt = bytesToSignedBigInt; exports.bytesToNumber = bytesToNumber; exports.bytesToString = bytesToString; exports.bytesToBase64 = bytesToBase64; exports.hexToBytes = hexToBytes; exports.bigIntToBytes = bigIntToBytes; exports.signedBigIntToBytes = signedBigIntToBytes; exports.numberToBytes = numberToBytes; exports.stringToBytes = stringToBytes; exports.base64ToBytes = base64ToBytes; exports.valueToBytes = valueToBytes; exports.concatBytes = concatBytes; exports.createDataView = createDataView;
+
+}).call(this)}).call(this,require("buffer").Buffer)
+},{"./chunk-6ZDHSOUV.js":21,"@noble/hashes/sha3":83,"@scure/base":85,"buffer":91,"superstruct":165}],29:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } }// src/misc.ts
+function isNonEmptyArray(value) {
+  return Array.isArray(value) && value.length > 0;
+}
+function isNullOrUndefined(value) {
+  return value === null || value === void 0;
+}
+function isObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+var hasProperty = (objectToCheck, name) => Object.hasOwnProperty.call(objectToCheck, name);
+function getKnownPropertyNames(object) {
+  return Object.getOwnPropertyNames(object);
+}
+var JsonSize = /* @__PURE__ */ ((JsonSize2) => {
+  JsonSize2[JsonSize2["Null"] = 4] = "Null";
+  JsonSize2[JsonSize2["Comma"] = 1] = "Comma";
+  JsonSize2[JsonSize2["Wrapper"] = 1] = "Wrapper";
+  JsonSize2[JsonSize2["True"] = 4] = "True";
+  JsonSize2[JsonSize2["False"] = 5] = "False";
+  JsonSize2[JsonSize2["Quote"] = 1] = "Quote";
+  JsonSize2[JsonSize2["Colon"] = 1] = "Colon";
+  JsonSize2[JsonSize2["Date"] = 24] = "Date";
+  return JsonSize2;
+})(JsonSize || {});
+var ESCAPE_CHARACTERS_REGEXP = /"|\\|\n|\r|\t/gu;
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  try {
+    let proto = value;
+    while (Object.getPrototypeOf(proto) !== null) {
+      proto = Object.getPrototypeOf(proto);
+    }
+    return Object.getPrototypeOf(value) === proto;
+  } catch (_) {
+    return false;
+  }
+}
+function isASCII(character) {
+  return character.charCodeAt(0) <= 127;
+}
+function calculateStringSize(value) {
+  const size = value.split("").reduce((total, character) => {
+    if (isASCII(character)) {
+      return total + 1;
+    }
+    return total + 2;
+  }, 0);
+  return size + (_nullishCoalesce(value.match(ESCAPE_CHARACTERS_REGEXP), () => ( []))).length;
+}
+function calculateNumberSize(value) {
+  return value.toString().length;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+exports.isNonEmptyArray = isNonEmptyArray; exports.isNullOrUndefined = isNullOrUndefined; exports.isObject = isObject; exports.hasProperty = hasProperty; exports.getKnownPropertyNames = getKnownPropertyNames; exports.JsonSize = JsonSize; exports.ESCAPE_CHARACTERS_REGEXP = ESCAPE_CHARACTERS_REGEXP; exports.isPlainObject = isPlainObject; exports.isASCII = isASCII; exports.calculateStringSize = calculateStringSize; exports.calculateNumberSize = calculateNumberSize;
+
+},{}],30:[function(require,module,exports){
+"use strict";
+},{}],31:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// src/caip-types.ts
+var _superstruct = require('superstruct');
+var CAIP_CHAIN_ID_REGEX = /^(?<namespace>[-a-z0-9]{3,8}):(?<reference>[-_a-zA-Z0-9]{1,32})$/u;
+var CAIP_NAMESPACE_REGEX = /^[-a-z0-9]{3,8}$/u;
+var CAIP_REFERENCE_REGEX = /^[-_a-zA-Z0-9]{1,32}$/u;
+var CAIP_ACCOUNT_ID_REGEX = /^(?<chainId>(?<namespace>[-a-z0-9]{3,8}):(?<reference>[-_a-zA-Z0-9]{1,32})):(?<accountAddress>[-.%a-zA-Z0-9]{1,128})$/u;
+var CAIP_ACCOUNT_ADDRESS_REGEX = /^[-.%a-zA-Z0-9]{1,128}$/u;
+var CaipChainIdStruct = _superstruct.pattern.call(void 0, _superstruct.string.call(void 0, ), CAIP_CHAIN_ID_REGEX);
+var CaipNamespaceStruct = _superstruct.pattern.call(void 0, _superstruct.string.call(void 0, ), CAIP_NAMESPACE_REGEX);
+var CaipReferenceStruct = _superstruct.pattern.call(void 0, _superstruct.string.call(void 0, ), CAIP_REFERENCE_REGEX);
+var CaipAccountIdStruct = _superstruct.pattern.call(void 0, _superstruct.string.call(void 0, ), CAIP_ACCOUNT_ID_REGEX);
+var CaipAccountAddressStruct = _superstruct.pattern.call(void 0, 
+  _superstruct.string.call(void 0, ),
+  CAIP_ACCOUNT_ADDRESS_REGEX
+);
+function isCaipChainId(value) {
+  return _superstruct.is.call(void 0, value, CaipChainIdStruct);
+}
+function isCaipNamespace(value) {
+  return _superstruct.is.call(void 0, value, CaipNamespaceStruct);
+}
+function isCaipReference(value) {
+  return _superstruct.is.call(void 0, value, CaipReferenceStruct);
+}
+function isCaipAccountId(value) {
+  return _superstruct.is.call(void 0, value, CaipAccountIdStruct);
+}
+function isCaipAccountAddress(value) {
+  return _superstruct.is.call(void 0, value, CaipAccountAddressStruct);
+}
+function parseCaipChainId(caipChainId) {
+  const match = CAIP_CHAIN_ID_REGEX.exec(caipChainId);
+  if (!_optionalChain([match, 'optionalAccess', _ => _.groups])) {
+    throw new Error("Invalid CAIP chain ID.");
+  }
+  return {
+    namespace: match.groups.namespace,
+    reference: match.groups.reference
+  };
+}
+function parseCaipAccountId(caipAccountId) {
+  const match = CAIP_ACCOUNT_ID_REGEX.exec(caipAccountId);
+  if (!_optionalChain([match, 'optionalAccess', _2 => _2.groups])) {
+    throw new Error("Invalid CAIP account ID.");
+  }
+  return {
+    address: match.groups.accountAddress,
+    chainId: match.groups.chainId,
+    chain: {
+      namespace: match.groups.namespace,
+      reference: match.groups.reference
+    }
+  };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exports.CAIP_CHAIN_ID_REGEX = CAIP_CHAIN_ID_REGEX; exports.CAIP_NAMESPACE_REGEX = CAIP_NAMESPACE_REGEX; exports.CAIP_REFERENCE_REGEX = CAIP_REFERENCE_REGEX; exports.CAIP_ACCOUNT_ID_REGEX = CAIP_ACCOUNT_ID_REGEX; exports.CAIP_ACCOUNT_ADDRESS_REGEX = CAIP_ACCOUNT_ADDRESS_REGEX; exports.CaipChainIdStruct = CaipChainIdStruct; exports.CaipNamespaceStruct = CaipNamespaceStruct; exports.CaipReferenceStruct = CaipReferenceStruct; exports.CaipAccountIdStruct = CaipAccountIdStruct; exports.CaipAccountAddressStruct = CaipAccountAddressStruct; exports.isCaipChainId = isCaipChainId; exports.isCaipNamespace = isCaipNamespace; exports.isCaipReference = isCaipReference; exports.isCaipAccountId = isCaipAccountId; exports.isCaipAccountAddress = isCaipAccountAddress; exports.parseCaipChainId = parseCaipChainId; exports.parseCaipAccountId = parseCaipAccountId;
+
+},{"superstruct":165}],32:[function(require,module,exports){
+"use strict";
+},{}],33:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+
+var _chunkQEPVHEP7js = require('./chunk-QEPVHEP7.js');
+
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+// src/number.ts
+var numberToHex = (value) => {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "number", "Value must be a number.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, value >= 0, "Value must be a non-negative number.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, 
+    Number.isSafeInteger(value),
+    "Value is not a safe integer. Use `bigIntToHex` instead."
+  );
+  return _chunkQEPVHEP7js.add0x.call(void 0, value.toString(16));
+};
+var bigIntToHex = (value) => {
+  _chunk6ZDHSOUVjs.assert.call(void 0, typeof value === "bigint", "Value must be a bigint.");
+  _chunk6ZDHSOUVjs.assert.call(void 0, value >= 0, "Value must be a non-negative bigint.");
+  return _chunkQEPVHEP7js.add0x.call(void 0, value.toString(16));
+};
+var hexToNumber = (value) => {
+  _chunkQEPVHEP7js.assertIsHexString.call(void 0, value);
+  const numberValue = parseInt(value, 16);
+  _chunk6ZDHSOUVjs.assert.call(void 0, 
+    Number.isSafeInteger(numberValue),
+    "Value is not a safe integer. Use `hexToBigInt` instead."
+  );
+  return numberValue;
+};
+var hexToBigInt = (value) => {
+  _chunkQEPVHEP7js.assertIsHexString.call(void 0, value);
+  return BigInt(_chunkQEPVHEP7js.add0x.call(void 0, value));
+};
+
+
+
+
+
+
+exports.numberToHex = numberToHex; exports.bigIntToHex = bigIntToHex; exports.hexToNumber = hexToNumber; exports.hexToBigInt = hexToBigInt;
+
+},{"./chunk-6ZDHSOUV.js":21,"./chunk-QEPVHEP7.js":28}],34:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});
+
+
+
+var _chunk3W5G4CYIjs = require('./chunk-3W5G4CYI.js');
+
+// src/collections.ts
+var _map;
+var FrozenMap = class {
+  constructor(entries) {
+    _chunk3W5G4CYIjs.__privateAdd.call(void 0, this, _map, void 0);
+    _chunk3W5G4CYIjs.__privateSet.call(void 0, this, _map, new Map(entries));
+    Object.freeze(this);
+  }
+  get size() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).size;
+  }
+  [Symbol.iterator]() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map)[Symbol.iterator]();
+  }
+  entries() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).entries();
+  }
+  forEach(callbackfn, thisArg) {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).forEach(
+      (value, key, _map2) => callbackfn.call(thisArg, value, key, this)
+    );
+  }
+  get(key) {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).get(key);
+  }
+  has(key) {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).has(key);
+  }
+  keys() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).keys();
+  }
+  values() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _map).values();
+  }
+  toString() {
+    return `FrozenMap(${this.size}) {${this.size > 0 ? ` ${[...this.entries()].map(([key, value]) => `${String(key)} => ${String(value)}`).join(", ")} ` : ""}}`;
+  }
+};
+_map = new WeakMap();
+var _set;
+var FrozenSet = class {
+  constructor(values) {
+    _chunk3W5G4CYIjs.__privateAdd.call(void 0, this, _set, void 0);
+    _chunk3W5G4CYIjs.__privateSet.call(void 0, this, _set, new Set(values));
+    Object.freeze(this);
+  }
+  get size() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set).size;
+  }
+  [Symbol.iterator]() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set)[Symbol.iterator]();
+  }
+  entries() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set).entries();
+  }
+  forEach(callbackfn, thisArg) {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set).forEach(
+      (value, value2, _set2) => callbackfn.call(thisArg, value, value2, this)
+    );
+  }
+  has(value) {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set).has(value);
+  }
+  keys() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set).keys();
+  }
+  values() {
+    return _chunk3W5G4CYIjs.__privateGet.call(void 0, this, _set).values();
+  }
+  toString() {
+    return `FrozenSet(${this.size}) {${this.size > 0 ? ` ${[...this.values()].map((member) => String(member)).join(", ")} ` : ""}}`;
+  }
+};
+_set = new WeakMap();
+Object.freeze(FrozenMap);
+Object.freeze(FrozenMap.prototype);
+Object.freeze(FrozenSet);
+Object.freeze(FrozenSet.prototype);
+
+
+
+
+exports.FrozenMap = FrozenMap; exports.FrozenSet = FrozenSet;
+
+},{"./chunk-3W5G4CYI.js":17}],35:[function(require,module,exports){
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});require('./chunk-2TBCL6EF.js');
+
+
+
+
+
+var _chunkVFXTVNXNjs = require('./chunk-VFXTVNXN.js');
+require('./chunk-LC2CRSWD.js');
+
+
+
+
+var _chunk4RMX5YWEjs = require('./chunk-4RMX5YWE.js');
+require('./chunk-UOTVU7OQ.js');
+
+
+
+
+
+
+
+
+
+
+var _chunk4D6XQBHAjs = require('./chunk-4D6XQBHA.js');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var _chunkOLLG4H35js = require('./chunk-OLLG4H35.js');
+require('./chunk-RKRGAFXY.js');
+
+
+
+var _chunk2LBGT4GHjs = require('./chunk-2LBGT4GH.js');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var _chunkU7ZUGCE7js = require('./chunk-U7ZUGCE7.js');
+
+
+var _chunkE4C7EW4Rjs = require('./chunk-E4C7EW4R.js');
+
+
+var _chunk6NZW4WK4js = require('./chunk-6NZW4WK4.js');
+
+
+
+
+
+var _chunkDHVKFDHQjs = require('./chunk-DHVKFDHQ.js');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var _chunkQEPVHEP7js = require('./chunk-QEPVHEP7.js');
+
+
+
+
+
+var _chunk6ZDHSOUVjs = require('./chunk-6ZDHSOUV.js');
+
+
+
+
+
+
+var _chunkIZC266HSjs = require('./chunk-IZC266HS.js');
+
+
+
+
+
+
+
+
+
+
+
+
+var _chunkQVEKZRZ2js = require('./chunk-QVEKZRZ2.js');
+
+
+
+var _chunkZ2RGWDD7js = require('./chunk-Z2RGWDD7.js');
+require('./chunk-3W5G4CYI.js');
+require('./chunk-EQMZL4XU.js');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exports.AssertionError = _chunk6ZDHSOUVjs.AssertionError; exports.CAIP_ACCOUNT_ADDRESS_REGEX = _chunkU7ZUGCE7js.CAIP_ACCOUNT_ADDRESS_REGEX; exports.CAIP_ACCOUNT_ID_REGEX = _chunkU7ZUGCE7js.CAIP_ACCOUNT_ID_REGEX; exports.CAIP_CHAIN_ID_REGEX = _chunkU7ZUGCE7js.CAIP_CHAIN_ID_REGEX; exports.CAIP_NAMESPACE_REGEX = _chunkU7ZUGCE7js.CAIP_NAMESPACE_REGEX; exports.CAIP_REFERENCE_REGEX = _chunkU7ZUGCE7js.CAIP_REFERENCE_REGEX; exports.CaipAccountAddressStruct = _chunkU7ZUGCE7js.CaipAccountAddressStruct; exports.CaipAccountIdStruct = _chunkU7ZUGCE7js.CaipAccountIdStruct; exports.CaipChainIdStruct = _chunkU7ZUGCE7js.CaipChainIdStruct; exports.CaipNamespaceStruct = _chunkU7ZUGCE7js.CaipNamespaceStruct; exports.CaipReferenceStruct = _chunkU7ZUGCE7js.CaipReferenceStruct; exports.ChecksumStruct = _chunkE4C7EW4Rjs.ChecksumStruct; exports.Duration = _chunk4RMX5YWEjs.Duration; exports.ESCAPE_CHARACTERS_REGEXP = _chunkQVEKZRZ2js.ESCAPE_CHARACTERS_REGEXP; exports.FrozenMap = _chunkZ2RGWDD7js.FrozenMap; exports.FrozenSet = _chunkZ2RGWDD7js.FrozenSet; exports.HexAddressStruct = _chunkQEPVHEP7js.HexAddressStruct; exports.HexChecksumAddressStruct = _chunkQEPVHEP7js.HexChecksumAddressStruct; exports.HexStruct = _chunkQEPVHEP7js.HexStruct; exports.JsonRpcErrorStruct = _chunkOLLG4H35js.JsonRpcErrorStruct; exports.JsonRpcFailureStruct = _chunkOLLG4H35js.JsonRpcFailureStruct; exports.JsonRpcIdStruct = _chunkOLLG4H35js.JsonRpcIdStruct; exports.JsonRpcNotificationStruct = _chunkOLLG4H35js.JsonRpcNotificationStruct; exports.JsonRpcParamsStruct = _chunkOLLG4H35js.JsonRpcParamsStruct; exports.JsonRpcRequestStruct = _chunkOLLG4H35js.JsonRpcRequestStruct; exports.JsonRpcResponseStruct = _chunkOLLG4H35js.JsonRpcResponseStruct; exports.JsonRpcSuccessStruct = _chunkOLLG4H35js.JsonRpcSuccessStruct; exports.JsonRpcVersionStruct = _chunkOLLG4H35js.JsonRpcVersionStruct; exports.JsonSize = _chunkQVEKZRZ2js.JsonSize; exports.JsonStruct = _chunkOLLG4H35js.JsonStruct; exports.PendingJsonRpcResponseStruct = _chunkOLLG4H35js.PendingJsonRpcResponseStruct; exports.StrictHexStruct = _chunkQEPVHEP7js.StrictHexStruct; exports.UnsafeJsonStruct = _chunkOLLG4H35js.UnsafeJsonStruct; exports.VersionRangeStruct = _chunk4D6XQBHAjs.VersionRangeStruct; exports.VersionStruct = _chunk4D6XQBHAjs.VersionStruct; exports.add0x = _chunkQEPVHEP7js.add0x; exports.assert = _chunk6ZDHSOUVjs.assert; exports.assertExhaustive = _chunk6ZDHSOUVjs.assertExhaustive; exports.assertIsBytes = _chunkQEPVHEP7js.assertIsBytes; exports.assertIsHexString = _chunkQEPVHEP7js.assertIsHexString; exports.assertIsJsonRpcError = _chunkOLLG4H35js.assertIsJsonRpcError; exports.assertIsJsonRpcFailure = _chunkOLLG4H35js.assertIsJsonRpcFailure; exports.assertIsJsonRpcNotification = _chunkOLLG4H35js.assertIsJsonRpcNotification; exports.assertIsJsonRpcRequest = _chunkOLLG4H35js.assertIsJsonRpcRequest; exports.assertIsJsonRpcResponse = _chunkOLLG4H35js.assertIsJsonRpcResponse; exports.assertIsJsonRpcSuccess = _chunkOLLG4H35js.assertIsJsonRpcSuccess; exports.assertIsPendingJsonRpcResponse = _chunkOLLG4H35js.assertIsPendingJsonRpcResponse; exports.assertIsSemVerRange = _chunk4D6XQBHAjs.assertIsSemVerRange; exports.assertIsSemVerVersion = _chunk4D6XQBHAjs.assertIsSemVerVersion; exports.assertIsStrictHexString = _chunkQEPVHEP7js.assertIsStrictHexString; exports.assertStruct = _chunk6ZDHSOUVjs.assertStruct; exports.base64 = _chunk6NZW4WK4js.base64; exports.base64ToBytes = _chunkQEPVHEP7js.base64ToBytes; exports.bigIntToBytes = _chunkQEPVHEP7js.bigIntToBytes; exports.bigIntToHex = _chunkVFXTVNXNjs.bigIntToHex; exports.bytesToBase64 = _chunkQEPVHEP7js.bytesToBase64; exports.bytesToBigInt = _chunkQEPVHEP7js.bytesToBigInt; exports.bytesToHex = _chunkQEPVHEP7js.bytesToHex; exports.bytesToNumber = _chunkQEPVHEP7js.bytesToNumber; exports.bytesToSignedBigInt = _chunkQEPVHEP7js.bytesToSignedBigInt; exports.bytesToString = _chunkQEPVHEP7js.bytesToString; exports.calculateNumberSize = _chunkQVEKZRZ2js.calculateNumberSize; exports.calculateStringSize = _chunkQVEKZRZ2js.calculateStringSize; exports.concatBytes = _chunkQEPVHEP7js.concatBytes; exports.createBigInt = _chunkDHVKFDHQjs.createBigInt; exports.createBytes = _chunkDHVKFDHQjs.createBytes; exports.createDataView = _chunkQEPVHEP7js.createDataView; exports.createHex = _chunkDHVKFDHQjs.createHex; exports.createModuleLogger = _chunk2LBGT4GHjs.createModuleLogger; exports.createNumber = _chunkDHVKFDHQjs.createNumber; exports.createProjectLogger = _chunk2LBGT4GHjs.createProjectLogger; exports.exactOptional = _chunkOLLG4H35js.exactOptional; exports.getChecksumAddress = _chunkQEPVHEP7js.getChecksumAddress; exports.getErrorMessage = _chunkIZC266HSjs.getErrorMessage; exports.getJsonRpcIdValidator = _chunkOLLG4H35js.getJsonRpcIdValidator; exports.getJsonSize = _chunkOLLG4H35js.getJsonSize; exports.getKnownPropertyNames = _chunkQVEKZRZ2js.getKnownPropertyNames; exports.getSafeJson = _chunkOLLG4H35js.getSafeJson; exports.gtRange = _chunk4D6XQBHAjs.gtRange; exports.gtVersion = _chunk4D6XQBHAjs.gtVersion; exports.hasProperty = _chunkQVEKZRZ2js.hasProperty; exports.hexToBigInt = _chunkVFXTVNXNjs.hexToBigInt; exports.hexToBytes = _chunkQEPVHEP7js.hexToBytes; exports.hexToNumber = _chunkVFXTVNXNjs.hexToNumber; exports.inMilliseconds = _chunk4RMX5YWEjs.inMilliseconds; exports.isASCII = _chunkQVEKZRZ2js.isASCII; exports.isBytes = _chunkQEPVHEP7js.isBytes; exports.isCaipAccountAddress = _chunkU7ZUGCE7js.isCaipAccountAddress; exports.isCaipAccountId = _chunkU7ZUGCE7js.isCaipAccountId; exports.isCaipChainId = _chunkU7ZUGCE7js.isCaipChainId; exports.isCaipNamespace = _chunkU7ZUGCE7js.isCaipNamespace; exports.isCaipReference = _chunkU7ZUGCE7js.isCaipReference; exports.isErrorWithCode = _chunkIZC266HSjs.isErrorWithCode; exports.isErrorWithMessage = _chunkIZC266HSjs.isErrorWithMessage; exports.isErrorWithStack = _chunkIZC266HSjs.isErrorWithStack; exports.isHexString = _chunkQEPVHEP7js.isHexString; exports.isJsonRpcError = _chunkOLLG4H35js.isJsonRpcError; exports.isJsonRpcFailure = _chunkOLLG4H35js.isJsonRpcFailure; exports.isJsonRpcNotification = _chunkOLLG4H35js.isJsonRpcNotification; exports.isJsonRpcRequest = _chunkOLLG4H35js.isJsonRpcRequest; exports.isJsonRpcResponse = _chunkOLLG4H35js.isJsonRpcResponse; exports.isJsonRpcSuccess = _chunkOLLG4H35js.isJsonRpcSuccess; exports.isNonEmptyArray = _chunkQVEKZRZ2js.isNonEmptyArray; exports.isNullOrUndefined = _chunkQVEKZRZ2js.isNullOrUndefined; exports.isObject = _chunkQVEKZRZ2js.isObject; exports.isPendingJsonRpcResponse = _chunkOLLG4H35js.isPendingJsonRpcResponse; exports.isPlainObject = _chunkQVEKZRZ2js.isPlainObject; exports.isStrictHexString = _chunkQEPVHEP7js.isStrictHexString; exports.isValidChecksumAddress = _chunkQEPVHEP7js.isValidChecksumAddress; exports.isValidHexAddress = _chunkQEPVHEP7js.isValidHexAddress; exports.isValidJson = _chunkOLLG4H35js.isValidJson; exports.isValidSemVerRange = _chunk4D6XQBHAjs.isValidSemVerRange; exports.isValidSemVerVersion = _chunk4D6XQBHAjs.isValidSemVerVersion; exports.jsonrpc2 = _chunkOLLG4H35js.jsonrpc2; exports.numberToBytes = _chunkQEPVHEP7js.numberToBytes; exports.numberToHex = _chunkVFXTVNXNjs.numberToHex; exports.object = _chunkOLLG4H35js.object; exports.parseCaipAccountId = _chunkU7ZUGCE7js.parseCaipAccountId; exports.parseCaipChainId = _chunkU7ZUGCE7js.parseCaipChainId; exports.remove0x = _chunkQEPVHEP7js.remove0x; exports.satisfiesVersionRange = _chunk4D6XQBHAjs.satisfiesVersionRange; exports.signedBigIntToBytes = _chunkQEPVHEP7js.signedBigIntToBytes; exports.stringToBytes = _chunkQEPVHEP7js.stringToBytes; exports.timeSince = _chunk4RMX5YWEjs.timeSince; exports.valueToBytes = _chunkQEPVHEP7js.valueToBytes; exports.wrapError = _chunkIZC266HSjs.wrapError;
+
+},{"./chunk-2LBGT4GH.js":15,"./chunk-2TBCL6EF.js":16,"./chunk-3W5G4CYI.js":17,"./chunk-4D6XQBHA.js":18,"./chunk-4RMX5YWE.js":19,"./chunk-6NZW4WK4.js":20,"./chunk-6ZDHSOUV.js":21,"./chunk-DHVKFDHQ.js":22,"./chunk-E4C7EW4R.js":23,"./chunk-EQMZL4XU.js":24,"./chunk-IZC266HS.js":25,"./chunk-LC2CRSWD.js":26,"./chunk-OLLG4H35.js":27,"./chunk-QEPVHEP7.js":28,"./chunk-QVEKZRZ2.js":29,"./chunk-RKRGAFXY.js":30,"./chunk-U7ZUGCE7.js":31,"./chunk-UOTVU7OQ.js":32,"./chunk-VFXTVNXN.js":33,"./chunk-Z2RGWDD7.js":34}],36:[function(require,module,exports){
+const ANY = Symbol('SemVer ANY')
+// hoisted class for cyclic dependency
+class Comparator {
+  static get ANY () {
+    return ANY
+  }
+
+  constructor (comp, options) {
+    options = parseOptions(options)
+
+    if (comp instanceof Comparator) {
+      if (comp.loose === !!options.loose) {
+        return comp
+      } else {
+        comp = comp.value
+      }
+    }
+
+    comp = comp.trim().split(/\s+/).join(' ')
+    debug('comparator', comp, options)
+    this.options = options
+    this.loose = !!options.loose
+    this.parse(comp)
+
+    if (this.semver === ANY) {
+      this.value = ''
+    } else {
+      this.value = this.operator + this.semver.version
+    }
+
+    debug('comp', this)
+  }
+
+  parse (comp) {
+    const r = this.options.loose ? re[t.COMPARATORLOOSE] : re[t.COMPARATOR]
+    const m = comp.match(r)
+
+    if (!m) {
+      throw new TypeError(`Invalid comparator: ${comp}`)
+    }
+
+    this.operator = m[1] !== undefined ? m[1] : ''
+    if (this.operator === '=') {
+      this.operator = ''
+    }
+
+    // if it literally is just '>' or '' then allow anything.
+    if (!m[2]) {
+      this.semver = ANY
+    } else {
+      this.semver = new SemVer(m[2], this.options.loose)
+    }
+  }
+
+  toString () {
+    return this.value
+  }
+
+  test (version) {
+    debug('Comparator.test', version, this.options.loose)
+
+    if (this.semver === ANY || version === ANY) {
+      return true
+    }
+
+    if (typeof version === 'string') {
+      try {
+        version = new SemVer(version, this.options)
+      } catch (er) {
+        return false
+      }
+    }
+
+    return cmp(version, this.operator, this.semver, this.options)
+  }
+
+  intersects (comp, options) {
+    if (!(comp instanceof Comparator)) {
+      throw new TypeError('a Comparator is required')
+    }
+
+    if (this.operator === '') {
+      if (this.value === '') {
+        return true
+      }
+      return new Range(comp.value, options).test(this.value)
+    } else if (comp.operator === '') {
+      if (comp.value === '') {
+        return true
+      }
+      return new Range(this.value, options).test(comp.semver)
+    }
+
+    options = parseOptions(options)
+
+    // Special cases where nothing can possibly be lower
+    if (options.includePrerelease &&
+      (this.value === '<0.0.0-0' || comp.value === '<0.0.0-0')) {
+      return false
+    }
+    if (!options.includePrerelease &&
+      (this.value.startsWith('<0.0.0') || comp.value.startsWith('<0.0.0'))) {
+      return false
+    }
+
+    // Same direction increasing (> or >=)
+    if (this.operator.startsWith('>') && comp.operator.startsWith('>')) {
+      return true
+    }
+    // Same direction decreasing (< or <=)
+    if (this.operator.startsWith('<') && comp.operator.startsWith('<')) {
+      return true
+    }
+    // same SemVer and both sides are inclusive (<= or >=)
+    if (
+      (this.semver.version === comp.semver.version) &&
+      this.operator.includes('=') && comp.operator.includes('=')) {
+      return true
+    }
+    // opposite directions less than
+    if (cmp(this.semver, '<', comp.semver, options) &&
+      this.operator.startsWith('>') && comp.operator.startsWith('<')) {
+      return true
+    }
+    // opposite directions greater than
+    if (cmp(this.semver, '>', comp.semver, options) &&
+      this.operator.startsWith('<') && comp.operator.startsWith('>')) {
+      return true
+    }
+    return false
+  }
+}
+
+module.exports = Comparator
+
+const parseOptions = require('../internal/parse-options')
+const { safeRe: re, t } = require('../internal/re')
+const cmp = require('../functions/cmp')
+const debug = require('../internal/debug')
+const SemVer = require('./semver')
+const Range = require('./range')
+
+},{"../functions/cmp":40,"../internal/debug":65,"../internal/parse-options":67,"../internal/re":68,"./range":37,"./semver":38}],37:[function(require,module,exports){
+// hoisted class for cyclic dependency
+class Range {
+  constructor (range, options) {
+    options = parseOptions(options)
+
+    if (range instanceof Range) {
+      if (
+        range.loose === !!options.loose &&
+        range.includePrerelease === !!options.includePrerelease
+      ) {
+        return range
+      } else {
+        return new Range(range.raw, options)
+      }
+    }
+
+    if (range instanceof Comparator) {
+      // just put it in the set and return
+      this.raw = range.value
+      this.set = [[range]]
+      this.format()
+      return this
+    }
+
+    this.options = options
+    this.loose = !!options.loose
+    this.includePrerelease = !!options.includePrerelease
+
+    // First reduce all whitespace as much as possible so we do not have to rely
+    // on potentially slow regexes like \s*. This is then stored and used for
+    // future error messages as well.
+    this.raw = range
+      .trim()
+      .split(/\s+/)
+      .join(' ')
+
+    // First, split on ||
+    this.set = this.raw
+      .split('||')
+      // map the range to a 2d array of comparators
+      .map(r => this.parseRange(r.trim()))
+      // throw out any comparator lists that are empty
+      // this generally means that it was not a valid range, which is allowed
+      // in loose mode, but will still throw if the WHOLE range is invalid.
+      .filter(c => c.length)
+
+    if (!this.set.length) {
+      throw new TypeError(`Invalid SemVer Range: ${this.raw}`)
+    }
+
+    // if we have any that are not the null set, throw out null sets.
+    if (this.set.length > 1) {
+      // keep the first one, in case they're all null sets
+      const first = this.set[0]
+      this.set = this.set.filter(c => !isNullSet(c[0]))
+      if (this.set.length === 0) {
+        this.set = [first]
+      } else if (this.set.length > 1) {
+        // if we have any that are *, then the range is just *
+        for (const c of this.set) {
+          if (c.length === 1 && isAny(c[0])) {
+            this.set = [c]
+            break
+          }
+        }
+      }
+    }
+
+    this.format()
+  }
+
+  format () {
+    this.range = this.set
+      .map((comps) => comps.join(' ').trim())
+      .join('||')
+      .trim()
+    return this.range
+  }
+
+  toString () {
+    return this.range
+  }
+
+  parseRange (range) {
+    // memoize range parsing for performance.
+    // this is a very hot path, and fully deterministic.
+    const memoOpts =
+      (this.options.includePrerelease && FLAG_INCLUDE_PRERELEASE) |
+      (this.options.loose && FLAG_LOOSE)
+    const memoKey = memoOpts + ':' + range
+    const cached = cache.get(memoKey)
+    if (cached) {
+      return cached
+    }
+
+    const loose = this.options.loose
+    // `1.2.3 - 1.2.4` => `>=1.2.3 <=1.2.4`
+    const hr = loose ? re[t.HYPHENRANGELOOSE] : re[t.HYPHENRANGE]
+    range = range.replace(hr, hyphenReplace(this.options.includePrerelease))
+    debug('hyphen replace', range)
+
+    // `> 1.2.3 < 1.2.5` => `>1.2.3 <1.2.5`
+    range = range.replace(re[t.COMPARATORTRIM], comparatorTrimReplace)
+    debug('comparator trim', range)
+
+    // `~ 1.2.3` => `~1.2.3`
+    range = range.replace(re[t.TILDETRIM], tildeTrimReplace)
+    debug('tilde trim', range)
+
+    // `^ 1.2.3` => `^1.2.3`
+    range = range.replace(re[t.CARETTRIM], caretTrimReplace)
+    debug('caret trim', range)
+
+    // At this point, the range is completely trimmed and
+    // ready to be split into comparators.
+
+    let rangeList = range
+      .split(' ')
+      .map(comp => parseComparator(comp, this.options))
+      .join(' ')
+      .split(/\s+/)
+      // >=0.0.0 is equivalent to *
+      .map(comp => replaceGTE0(comp, this.options))
+
+    if (loose) {
+      // in loose mode, throw out any that are not valid comparators
+      rangeList = rangeList.filter(comp => {
+        debug('loose invalid filter', comp, this.options)
+        return !!comp.match(re[t.COMPARATORLOOSE])
+      })
+    }
+    debug('range list', rangeList)
+
+    // if any comparators are the null set, then replace with JUST null set
+    // if more than one comparator, remove any * comparators
+    // also, don't include the same comparator more than once
+    const rangeMap = new Map()
+    const comparators = rangeList.map(comp => new Comparator(comp, this.options))
+    for (const comp of comparators) {
+      if (isNullSet(comp)) {
+        return [comp]
+      }
+      rangeMap.set(comp.value, comp)
+    }
+    if (rangeMap.size > 1 && rangeMap.has('')) {
+      rangeMap.delete('')
+    }
+
+    const result = [...rangeMap.values()]
+    cache.set(memoKey, result)
+    return result
+  }
+
+  intersects (range, options) {
+    if (!(range instanceof Range)) {
+      throw new TypeError('a Range is required')
+    }
+
+    return this.set.some((thisComparators) => {
+      return (
+        isSatisfiable(thisComparators, options) &&
+        range.set.some((rangeComparators) => {
+          return (
+            isSatisfiable(rangeComparators, options) &&
+            thisComparators.every((thisComparator) => {
+              return rangeComparators.every((rangeComparator) => {
+                return thisComparator.intersects(rangeComparator, options)
+              })
+            })
+          )
+        })
+      )
+    })
+  }
+
+  // if ANY of the sets match ALL of its comparators, then pass
+  test (version) {
+    if (!version) {
+      return false
+    }
+
+    if (typeof version === 'string') {
+      try {
+        version = new SemVer(version, this.options)
+      } catch (er) {
+        return false
+      }
+    }
+
+    for (let i = 0; i < this.set.length; i++) {
+      if (testSet(this.set[i], version, this.options)) {
+        return true
+      }
+    }
+    return false
+  }
+}
+
+module.exports = Range
+
+const LRU = require('lru-cache')
+const cache = new LRU({ max: 1000 })
+
+const parseOptions = require('../internal/parse-options')
+const Comparator = require('./comparator')
+const debug = require('../internal/debug')
+const SemVer = require('./semver')
+const {
+  safeRe: re,
+  t,
+  comparatorTrimReplace,
+  tildeTrimReplace,
+  caretTrimReplace,
+} = require('../internal/re')
+const { FLAG_INCLUDE_PRERELEASE, FLAG_LOOSE } = require('../internal/constants')
+
+const isNullSet = c => c.value === '<0.0.0-0'
+const isAny = c => c.value === ''
+
+// take a set of comparators and determine whether there
+// exists a version which can satisfy it
+const isSatisfiable = (comparators, options) => {
+  let result = true
+  const remainingComparators = comparators.slice()
+  let testComparator = remainingComparators.pop()
+
+  while (result && remainingComparators.length) {
+    result = remainingComparators.every((otherComparator) => {
+      return testComparator.intersects(otherComparator, options)
+    })
+
+    testComparator = remainingComparators.pop()
+  }
+
+  return result
+}
+
+// comprised of xranges, tildes, stars, and gtlt's at this point.
+// already replaced the hyphen ranges
+// turn into a set of JUST comparators.
+const parseComparator = (comp, options) => {
+  debug('comp', comp, options)
+  comp = replaceCarets(comp, options)
+  debug('caret', comp)
+  comp = replaceTildes(comp, options)
+  debug('tildes', comp)
+  comp = replaceXRanges(comp, options)
+  debug('xrange', comp)
+  comp = replaceStars(comp, options)
+  debug('stars', comp)
+  return comp
+}
+
+const isX = id => !id || id.toLowerCase() === 'x' || id === '*'
+
+// ~, ~> --> * (any, kinda silly)
+// ~2, ~2.x, ~2.x.x, ~>2, ~>2.x ~>2.x.x --> >=2.0.0 <3.0.0-0
+// ~2.0, ~2.0.x, ~>2.0, ~>2.0.x --> >=2.0.0 <2.1.0-0
+// ~1.2, ~1.2.x, ~>1.2, ~>1.2.x --> >=1.2.0 <1.3.0-0
+// ~1.2.3, ~>1.2.3 --> >=1.2.3 <1.3.0-0
+// ~1.2.0, ~>1.2.0 --> >=1.2.0 <1.3.0-0
+// ~0.0.1 --> >=0.0.1 <0.1.0-0
+const replaceTildes = (comp, options) => {
+  return comp
+    .trim()
+    .split(/\s+/)
+    .map((c) => replaceTilde(c, options))
+    .join(' ')
+}
+
+const replaceTilde = (comp, options) => {
+  const r = options.loose ? re[t.TILDELOOSE] : re[t.TILDE]
+  return comp.replace(r, (_, M, m, p, pr) => {
+    debug('tilde', comp, _, M, m, p, pr)
+    let ret
+
+    if (isX(M)) {
+      ret = ''
+    } else if (isX(m)) {
+      ret = `>=${M}.0.0 <${+M + 1}.0.0-0`
+    } else if (isX(p)) {
+      // ~1.2 == >=1.2.0 <1.3.0-0
+      ret = `>=${M}.${m}.0 <${M}.${+m + 1}.0-0`
+    } else if (pr) {
+      debug('replaceTilde pr', pr)
+      ret = `>=${M}.${m}.${p}-${pr
+      } <${M}.${+m + 1}.0-0`
+    } else {
+      // ~1.2.3 == >=1.2.3 <1.3.0-0
+      ret = `>=${M}.${m}.${p
+      } <${M}.${+m + 1}.0-0`
+    }
+
+    debug('tilde return', ret)
+    return ret
+  })
+}
+
+// ^ --> * (any, kinda silly)
+// ^2, ^2.x, ^2.x.x --> >=2.0.0 <3.0.0-0
+// ^2.0, ^2.0.x --> >=2.0.0 <3.0.0-0
+// ^1.2, ^1.2.x --> >=1.2.0 <2.0.0-0
+// ^1.2.3 --> >=1.2.3 <2.0.0-0
+// ^1.2.0 --> >=1.2.0 <2.0.0-0
+// ^0.0.1 --> >=0.0.1 <0.0.2-0
+// ^0.1.0 --> >=0.1.0 <0.2.0-0
+const replaceCarets = (comp, options) => {
+  return comp
+    .trim()
+    .split(/\s+/)
+    .map((c) => replaceCaret(c, options))
+    .join(' ')
+}
+
+const replaceCaret = (comp, options) => {
+  debug('caret', comp, options)
+  const r = options.loose ? re[t.CARETLOOSE] : re[t.CARET]
+  const z = options.includePrerelease ? '-0' : ''
+  return comp.replace(r, (_, M, m, p, pr) => {
+    debug('caret', comp, _, M, m, p, pr)
+    let ret
+
+    if (isX(M)) {
+      ret = ''
+    } else if (isX(m)) {
+      ret = `>=${M}.0.0${z} <${+M + 1}.0.0-0`
+    } else if (isX(p)) {
+      if (M === '0') {
+        ret = `>=${M}.${m}.0${z} <${M}.${+m + 1}.0-0`
+      } else {
+        ret = `>=${M}.${m}.0${z} <${+M + 1}.0.0-0`
+      }
+    } else if (pr) {
+      debug('replaceCaret pr', pr)
+      if (M === '0') {
+        if (m === '0') {
+          ret = `>=${M}.${m}.${p}-${pr
+          } <${M}.${m}.${+p + 1}-0`
+        } else {
+          ret = `>=${M}.${m}.${p}-${pr
+          } <${M}.${+m + 1}.0-0`
+        }
+      } else {
+        ret = `>=${M}.${m}.${p}-${pr
+        } <${+M + 1}.0.0-0`
+      }
+    } else {
+      debug('no pr')
+      if (M === '0') {
+        if (m === '0') {
+          ret = `>=${M}.${m}.${p
+          }${z} <${M}.${m}.${+p + 1}-0`
+        } else {
+          ret = `>=${M}.${m}.${p
+          }${z} <${M}.${+m + 1}.0-0`
+        }
+      } else {
+        ret = `>=${M}.${m}.${p
+        } <${+M + 1}.0.0-0`
+      }
+    }
+
+    debug('caret return', ret)
+    return ret
+  })
+}
+
+const replaceXRanges = (comp, options) => {
+  debug('replaceXRanges', comp, options)
+  return comp
+    .split(/\s+/)
+    .map((c) => replaceXRange(c, options))
+    .join(' ')
+}
+
+const replaceXRange = (comp, options) => {
+  comp = comp.trim()
+  const r = options.loose ? re[t.XRANGELOOSE] : re[t.XRANGE]
+  return comp.replace(r, (ret, gtlt, M, m, p, pr) => {
+    debug('xRange', comp, ret, gtlt, M, m, p, pr)
+    const xM = isX(M)
+    const xm = xM || isX(m)
+    const xp = xm || isX(p)
+    const anyX = xp
+
+    if (gtlt === '=' && anyX) {
+      gtlt = ''
+    }
+
+    // if we're including prereleases in the match, then we need
+    // to fix this to -0, the lowest possible prerelease value
+    pr = options.includePrerelease ? '-0' : ''
+
+    if (xM) {
+      if (gtlt === '>' || gtlt === '<') {
+        // nothing is allowed
+        ret = '<0.0.0-0'
+      } else {
+        // nothing is forbidden
+        ret = '*'
+      }
+    } else if (gtlt && anyX) {
+      // we know patch is an x, because we have any x at all.
+      // replace X with 0
+      if (xm) {
+        m = 0
+      }
+      p = 0
+
+      if (gtlt === '>') {
+        // >1 => >=2.0.0
+        // >1.2 => >=1.3.0
+        gtlt = '>='
+        if (xm) {
+          M = +M + 1
+          m = 0
+          p = 0
+        } else {
+          m = +m + 1
+          p = 0
+        }
+      } else if (gtlt === '<=') {
+        // <=0.7.x is actually <0.8.0, since any 0.7.x should
+        // pass.  Similarly, <=7.x is actually <8.0.0, etc.
+        gtlt = '<'
+        if (xm) {
+          M = +M + 1
+        } else {
+          m = +m + 1
+        }
+      }
+
+      if (gtlt === '<') {
+        pr = '-0'
+      }
+
+      ret = `${gtlt + M}.${m}.${p}${pr}`
+    } else if (xm) {
+      ret = `>=${M}.0.0${pr} <${+M + 1}.0.0-0`
+    } else if (xp) {
+      ret = `>=${M}.${m}.0${pr
+      } <${M}.${+m + 1}.0-0`
+    }
+
+    debug('xRange return', ret)
+
+    return ret
+  })
+}
+
+// Because * is AND-ed with everything else in the comparator,
+// and '' means "any version", just remove the *s entirely.
+const replaceStars = (comp, options) => {
+  debug('replaceStars', comp, options)
+  // Looseness is ignored here.  star is always as loose as it gets!
+  return comp
+    .trim()
+    .replace(re[t.STAR], '')
+}
+
+const replaceGTE0 = (comp, options) => {
+  debug('replaceGTE0', comp, options)
+  return comp
+    .trim()
+    .replace(re[options.includePrerelease ? t.GTE0PRE : t.GTE0], '')
+}
+
+// This function is passed to string.replace(re[t.HYPHENRANGE])
+// M, m, patch, prerelease, build
+// 1.2 - 3.4.5 => >=1.2.0 <=3.4.5
+// 1.2.3 - 3.4 => >=1.2.0 <3.5.0-0 Any 3.4.x will do
+// 1.2 - 3.4 => >=1.2.0 <3.5.0-0
+const hyphenReplace = incPr => ($0,
+  from, fM, fm, fp, fpr, fb,
+  to, tM, tm, tp, tpr, tb) => {
+  if (isX(fM)) {
+    from = ''
+  } else if (isX(fm)) {
+    from = `>=${fM}.0.0${incPr ? '-0' : ''}`
+  } else if (isX(fp)) {
+    from = `>=${fM}.${fm}.0${incPr ? '-0' : ''}`
+  } else if (fpr) {
+    from = `>=${from}`
+  } else {
+    from = `>=${from}${incPr ? '-0' : ''}`
+  }
+
+  if (isX(tM)) {
+    to = ''
+  } else if (isX(tm)) {
+    to = `<${+tM + 1}.0.0-0`
+  } else if (isX(tp)) {
+    to = `<${tM}.${+tm + 1}.0-0`
+  } else if (tpr) {
+    to = `<=${tM}.${tm}.${tp}-${tpr}`
+  } else if (incPr) {
+    to = `<${tM}.${tm}.${+tp + 1}-0`
+  } else {
+    to = `<=${to}`
+  }
+
+  return `${from} ${to}`.trim()
+}
+
+const testSet = (set, version, options) => {
+  for (let i = 0; i < set.length; i++) {
+    if (!set[i].test(version)) {
+      return false
+    }
+  }
+
+  if (version.prerelease.length && !options.includePrerelease) {
+    // Find the set of versions that are allowed to have prereleases
+    // For example, ^1.2.3-pr.1 desugars to >=1.2.3-pr.1 <2.0.0
+    // That should allow `1.2.3-pr.2` to pass.
+    // However, `1.2.4-alpha.notready` should NOT be allowed,
+    // even though it's within the range set by the comparators.
+    for (let i = 0; i < set.length; i++) {
+      debug(set[i].semver)
+      if (set[i].semver === Comparator.ANY) {
+        continue
+      }
+
+      if (set[i].semver.prerelease.length > 0) {
+        const allowed = set[i].semver
+        if (allowed.major === version.major &&
+            allowed.minor === version.minor &&
+            allowed.patch === version.patch) {
+          return true
+        }
+      }
+    }
+
+    // Version has a -pre, but it's not one of the ones we like.
+    return false
+  }
+
+  return true
+}
+
+},{"../internal/constants":64,"../internal/debug":65,"../internal/parse-options":67,"../internal/re":68,"./comparator":36,"./semver":38,"lru-cache":115}],38:[function(require,module,exports){
+const debug = require('../internal/debug')
+const { MAX_LENGTH, MAX_SAFE_INTEGER } = require('../internal/constants')
+const { safeRe: re, t } = require('../internal/re')
+
+const parseOptions = require('../internal/parse-options')
+const { compareIdentifiers } = require('../internal/identifiers')
+class SemVer {
+  constructor (version, options) {
+    options = parseOptions(options)
+
+    if (version instanceof SemVer) {
+      if (version.loose === !!options.loose &&
+          version.includePrerelease === !!options.includePrerelease) {
+        return version
+      } else {
+        version = version.version
+      }
+    } else if (typeof version !== 'string') {
+      throw new TypeError(`Invalid version. Must be a string. Got type "${typeof version}".`)
+    }
+
+    if (version.length > MAX_LENGTH) {
+      throw new TypeError(
+        `version is longer than ${MAX_LENGTH} characters`
+      )
+    }
+
+    debug('SemVer', version, options)
+    this.options = options
+    this.loose = !!options.loose
+    // this isn't actually relevant for versions, but keep it so that we
+    // don't run into trouble passing this.options around.
+    this.includePrerelease = !!options.includePrerelease
+
+    const m = version.trim().match(options.loose ? re[t.LOOSE] : re[t.FULL])
+
+    if (!m) {
+      throw new TypeError(`Invalid Version: ${version}`)
+    }
+
+    this.raw = version
+
+    // these are actually numbers
+    this.major = +m[1]
+    this.minor = +m[2]
+    this.patch = +m[3]
+
+    if (this.major > MAX_SAFE_INTEGER || this.major < 0) {
+      throw new TypeError('Invalid major version')
+    }
+
+    if (this.minor > MAX_SAFE_INTEGER || this.minor < 0) {
+      throw new TypeError('Invalid minor version')
+    }
+
+    if (this.patch > MAX_SAFE_INTEGER || this.patch < 0) {
+      throw new TypeError('Invalid patch version')
+    }
+
+    // numberify any prerelease numeric ids
+    if (!m[4]) {
+      this.prerelease = []
+    } else {
+      this.prerelease = m[4].split('.').map((id) => {
+        if (/^[0-9]+$/.test(id)) {
+          const num = +id
+          if (num >= 0 && num < MAX_SAFE_INTEGER) {
+            return num
+          }
+        }
+        return id
+      })
+    }
+
+    this.build = m[5] ? m[5].split('.') : []
+    this.format()
+  }
+
+  format () {
+    this.version = `${this.major}.${this.minor}.${this.patch}`
+    if (this.prerelease.length) {
+      this.version += `-${this.prerelease.join('.')}`
+    }
+    return this.version
+  }
+
+  toString () {
+    return this.version
+  }
+
+  compare (other) {
+    debug('SemVer.compare', this.version, this.options, other)
+    if (!(other instanceof SemVer)) {
+      if (typeof other === 'string' && other === this.version) {
+        return 0
+      }
+      other = new SemVer(other, this.options)
+    }
+
+    if (other.version === this.version) {
+      return 0
+    }
+
+    return this.compareMain(other) || this.comparePre(other)
+  }
+
+  compareMain (other) {
+    if (!(other instanceof SemVer)) {
+      other = new SemVer(other, this.options)
+    }
+
+    return (
+      compareIdentifiers(this.major, other.major) ||
+      compareIdentifiers(this.minor, other.minor) ||
+      compareIdentifiers(this.patch, other.patch)
+    )
+  }
+
+  comparePre (other) {
+    if (!(other instanceof SemVer)) {
+      other = new SemVer(other, this.options)
+    }
+
+    // NOT having a prerelease is > having one
+    if (this.prerelease.length && !other.prerelease.length) {
+      return -1
+    } else if (!this.prerelease.length && other.prerelease.length) {
+      return 1
+    } else if (!this.prerelease.length && !other.prerelease.length) {
+      return 0
+    }
+
+    let i = 0
+    do {
+      const a = this.prerelease[i]
+      const b = other.prerelease[i]
+      debug('prerelease compare', i, a, b)
+      if (a === undefined && b === undefined) {
+        return 0
+      } else if (b === undefined) {
+        return 1
+      } else if (a === undefined) {
+        return -1
+      } else if (a === b) {
+        continue
+      } else {
+        return compareIdentifiers(a, b)
+      }
+    } while (++i)
+  }
+
+  compareBuild (other) {
+    if (!(other instanceof SemVer)) {
+      other = new SemVer(other, this.options)
+    }
+
+    let i = 0
+    do {
+      const a = this.build[i]
+      const b = other.build[i]
+      debug('prerelease compare', i, a, b)
+      if (a === undefined && b === undefined) {
+        return 0
+      } else if (b === undefined) {
+        return 1
+      } else if (a === undefined) {
+        return -1
+      } else if (a === b) {
+        continue
+      } else {
+        return compareIdentifiers(a, b)
+      }
+    } while (++i)
+  }
+
+  // preminor will bump the version up to the next minor release, and immediately
+  // down to pre-release. premajor and prepatch work the same way.
+  inc (release, identifier, identifierBase) {
+    switch (release) {
+      case 'premajor':
+        this.prerelease.length = 0
+        this.patch = 0
+        this.minor = 0
+        this.major++
+        this.inc('pre', identifier, identifierBase)
+        break
+      case 'preminor':
+        this.prerelease.length = 0
+        this.patch = 0
+        this.minor++
+        this.inc('pre', identifier, identifierBase)
+        break
+      case 'prepatch':
+        // If this is already a prerelease, it will bump to the next version
+        // drop any prereleases that might already exist, since they are not
+        // relevant at this point.
+        this.prerelease.length = 0
+        this.inc('patch', identifier, identifierBase)
+        this.inc('pre', identifier, identifierBase)
+        break
+      // If the input is a non-prerelease version, this acts the same as
+      // prepatch.
+      case 'prerelease':
+        if (this.prerelease.length === 0) {
+          this.inc('patch', identifier, identifierBase)
+        }
+        this.inc('pre', identifier, identifierBase)
+        break
+
+      case 'major':
+        // If this is a pre-major version, bump up to the same major version.
+        // Otherwise increment major.
+        // 1.0.0-5 bumps to 1.0.0
+        // 1.1.0 bumps to 2.0.0
+        if (
+          this.minor !== 0 ||
+          this.patch !== 0 ||
+          this.prerelease.length === 0
+        ) {
+          this.major++
+        }
+        this.minor = 0
+        this.patch = 0
+        this.prerelease = []
+        break
+      case 'minor':
+        // If this is a pre-minor version, bump up to the same minor version.
+        // Otherwise increment minor.
+        // 1.2.0-5 bumps to 1.2.0
+        // 1.2.1 bumps to 1.3.0
+        if (this.patch !== 0 || this.prerelease.length === 0) {
+          this.minor++
+        }
+        this.patch = 0
+        this.prerelease = []
+        break
+      case 'patch':
+        // If this is not a pre-release version, it will increment the patch.
+        // If it is a pre-release it will bump up to the same patch version.
+        // 1.2.0-5 patches to 1.2.0
+        // 1.2.0 patches to 1.2.1
+        if (this.prerelease.length === 0) {
+          this.patch++
+        }
+        this.prerelease = []
+        break
+      // This probably shouldn't be used publicly.
+      // 1.0.0 'pre' would become 1.0.0-0 which is the wrong direction.
+      case 'pre': {
+        const base = Number(identifierBase) ? 1 : 0
+
+        if (!identifier && identifierBase === false) {
+          throw new Error('invalid increment argument: identifier is empty')
+        }
+
+        if (this.prerelease.length === 0) {
+          this.prerelease = [base]
+        } else {
+          let i = this.prerelease.length
+          while (--i >= 0) {
+            if (typeof this.prerelease[i] === 'number') {
+              this.prerelease[i]++
+              i = -2
+            }
+          }
+          if (i === -1) {
+            // didn't increment anything
+            if (identifier === this.prerelease.join('.') && identifierBase === false) {
+              throw new Error('invalid increment argument: identifier already exists')
+            }
+            this.prerelease.push(base)
+          }
+        }
+        if (identifier) {
+          // 1.2.0-beta.1 bumps to 1.2.0-beta.2,
+          // 1.2.0-beta.fooblz or 1.2.0-beta bumps to 1.2.0-beta.0
+          let prerelease = [identifier, base]
+          if (identifierBase === false) {
+            prerelease = [identifier]
+          }
+          if (compareIdentifiers(this.prerelease[0], identifier) === 0) {
+            if (isNaN(this.prerelease[1])) {
+              this.prerelease = prerelease
+            }
+          } else {
+            this.prerelease = prerelease
+          }
+        }
+        break
+      }
+      default:
+        throw new Error(`invalid increment argument: ${release}`)
+    }
+    this.raw = this.format()
+    if (this.build.length) {
+      this.raw += `+${this.build.join('.')}`
+    }
+    return this
+  }
+}
+
+module.exports = SemVer
+
+},{"../internal/constants":64,"../internal/debug":65,"../internal/identifiers":66,"../internal/parse-options":67,"../internal/re":68}],39:[function(require,module,exports){
+const parse = require('./parse')
+const clean = (version, options) => {
+  const s = parse(version.trim().replace(/^[=v]+/, ''), options)
+  return s ? s.version : null
+}
+module.exports = clean
+
+},{"./parse":55}],40:[function(require,module,exports){
+const eq = require('./eq')
+const neq = require('./neq')
+const gt = require('./gt')
+const gte = require('./gte')
+const lt = require('./lt')
+const lte = require('./lte')
+
+const cmp = (a, op, b, loose) => {
+  switch (op) {
+    case '===':
+      if (typeof a === 'object') {
+        a = a.version
+      }
+      if (typeof b === 'object') {
+        b = b.version
+      }
+      return a === b
+
+    case '!==':
+      if (typeof a === 'object') {
+        a = a.version
+      }
+      if (typeof b === 'object') {
+        b = b.version
+      }
+      return a !== b
+
+    case '':
+    case '=':
+    case '==':
+      return eq(a, b, loose)
+
+    case '!=':
+      return neq(a, b, loose)
+
+    case '>':
+      return gt(a, b, loose)
+
+    case '>=':
+      return gte(a, b, loose)
+
+    case '<':
+      return lt(a, b, loose)
+
+    case '<=':
+      return lte(a, b, loose)
+
+    default:
+      throw new TypeError(`Invalid operator: ${op}`)
+  }
+}
+module.exports = cmp
+
+},{"./eq":46,"./gt":47,"./gte":48,"./lt":50,"./lte":51,"./neq":54}],41:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const parse = require('./parse')
+const { safeRe: re, t } = require('../internal/re')
+
+const coerce = (version, options) => {
+  if (version instanceof SemVer) {
+    return version
+  }
+
+  if (typeof version === 'number') {
+    version = String(version)
+  }
+
+  if (typeof version !== 'string') {
+    return null
+  }
+
+  options = options || {}
+
+  let match = null
+  if (!options.rtl) {
+    match = version.match(re[t.COERCE])
+  } else {
+    // Find the right-most coercible string that does not share
+    // a terminus with a more left-ward coercible string.
+    // Eg, '1.2.3.4' wants to coerce '2.3.4', not '3.4' or '4'
+    //
+    // Walk through the string checking with a /g regexp
+    // Manually set the index so as to pick up overlapping matches.
+    // Stop when we get a match that ends at the string end, since no
+    // coercible string can be more right-ward without the same terminus.
+    let next
+    while ((next = re[t.COERCERTL].exec(version)) &&
+        (!match || match.index + match[0].length !== version.length)
+    ) {
+      if (!match ||
+            next.index + next[0].length !== match.index + match[0].length) {
+        match = next
+      }
+      re[t.COERCERTL].lastIndex = next.index + next[1].length + next[2].length
+    }
+    // leave it in a clean state
+    re[t.COERCERTL].lastIndex = -1
+  }
+
+  if (match === null) {
+    return null
+  }
+
+  return parse(`${match[2]}.${match[3] || '0'}.${match[4] || '0'}`, options)
+}
+module.exports = coerce
+
+},{"../classes/semver":38,"../internal/re":68,"./parse":55}],42:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const compareBuild = (a, b, loose) => {
+  const versionA = new SemVer(a, loose)
+  const versionB = new SemVer(b, loose)
+  return versionA.compare(versionB) || versionA.compareBuild(versionB)
+}
+module.exports = compareBuild
+
+},{"../classes/semver":38}],43:[function(require,module,exports){
+const compare = require('./compare')
+const compareLoose = (a, b) => compare(a, b, true)
+module.exports = compareLoose
+
+},{"./compare":44}],44:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const compare = (a, b, loose) =>
+  new SemVer(a, loose).compare(new SemVer(b, loose))
+
+module.exports = compare
+
+},{"../classes/semver":38}],45:[function(require,module,exports){
+const parse = require('./parse.js')
+
+const diff = (version1, version2) => {
+  const v1 = parse(version1, null, true)
+  const v2 = parse(version2, null, true)
+  const comparison = v1.compare(v2)
+
+  if (comparison === 0) {
+    return null
+  }
+
+  const v1Higher = comparison > 0
+  const highVersion = v1Higher ? v1 : v2
+  const lowVersion = v1Higher ? v2 : v1
+  const highHasPre = !!highVersion.prerelease.length
+  const lowHasPre = !!lowVersion.prerelease.length
+
+  if (lowHasPre && !highHasPre) {
+    // Going from prerelease -> no prerelease requires some special casing
+
+    // If the low version has only a major, then it will always be a major
+    // Some examples:
+    // 1.0.0-1 -> 1.0.0
+    // 1.0.0-1 -> 1.1.1
+    // 1.0.0-1 -> 2.0.0
+    if (!lowVersion.patch && !lowVersion.minor) {
+      return 'major'
+    }
+
+    // Otherwise it can be determined by checking the high version
+
+    if (highVersion.patch) {
+      // anything higher than a patch bump would result in the wrong version
+      return 'patch'
+    }
+
+    if (highVersion.minor) {
+      // anything higher than a minor bump would result in the wrong version
+      return 'minor'
+    }
+
+    // bumping major/minor/patch all have same result
+    return 'major'
+  }
+
+  // add the `pre` prefix if we are going to a prerelease version
+  const prefix = highHasPre ? 'pre' : ''
+
+  if (v1.major !== v2.major) {
+    return prefix + 'major'
+  }
+
+  if (v1.minor !== v2.minor) {
+    return prefix + 'minor'
+  }
+
+  if (v1.patch !== v2.patch) {
+    return prefix + 'patch'
+  }
+
+  // high and low are preleases
+  return 'prerelease'
+}
+
+module.exports = diff
+
+},{"./parse.js":55}],46:[function(require,module,exports){
+const compare = require('./compare')
+const eq = (a, b, loose) => compare(a, b, loose) === 0
+module.exports = eq
+
+},{"./compare":44}],47:[function(require,module,exports){
+const compare = require('./compare')
+const gt = (a, b, loose) => compare(a, b, loose) > 0
+module.exports = gt
+
+},{"./compare":44}],48:[function(require,module,exports){
+const compare = require('./compare')
+const gte = (a, b, loose) => compare(a, b, loose) >= 0
+module.exports = gte
+
+},{"./compare":44}],49:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+
+const inc = (version, release, options, identifier, identifierBase) => {
+  if (typeof (options) === 'string') {
+    identifierBase = identifier
+    identifier = options
+    options = undefined
+  }
+
+  try {
+    return new SemVer(
+      version instanceof SemVer ? version.version : version,
+      options
+    ).inc(release, identifier, identifierBase).version
+  } catch (er) {
+    return null
+  }
+}
+module.exports = inc
+
+},{"../classes/semver":38}],50:[function(require,module,exports){
+const compare = require('./compare')
+const lt = (a, b, loose) => compare(a, b, loose) < 0
+module.exports = lt
+
+},{"./compare":44}],51:[function(require,module,exports){
+const compare = require('./compare')
+const lte = (a, b, loose) => compare(a, b, loose) <= 0
+module.exports = lte
+
+},{"./compare":44}],52:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const major = (a, loose) => new SemVer(a, loose).major
+module.exports = major
+
+},{"../classes/semver":38}],53:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const minor = (a, loose) => new SemVer(a, loose).minor
+module.exports = minor
+
+},{"../classes/semver":38}],54:[function(require,module,exports){
+const compare = require('./compare')
+const neq = (a, b, loose) => compare(a, b, loose) !== 0
+module.exports = neq
+
+},{"./compare":44}],55:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const parse = (version, options, throwErrors = false) => {
+  if (version instanceof SemVer) {
+    return version
+  }
+  try {
+    return new SemVer(version, options)
+  } catch (er) {
+    if (!throwErrors) {
+      return null
+    }
+    throw er
+  }
+}
+
+module.exports = parse
+
+},{"../classes/semver":38}],56:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const patch = (a, loose) => new SemVer(a, loose).patch
+module.exports = patch
+
+},{"../classes/semver":38}],57:[function(require,module,exports){
+const parse = require('./parse')
+const prerelease = (version, options) => {
+  const parsed = parse(version, options)
+  return (parsed && parsed.prerelease.length) ? parsed.prerelease : null
+}
+module.exports = prerelease
+
+},{"./parse":55}],58:[function(require,module,exports){
+const compare = require('./compare')
+const rcompare = (a, b, loose) => compare(b, a, loose)
+module.exports = rcompare
+
+},{"./compare":44}],59:[function(require,module,exports){
+const compareBuild = require('./compare-build')
+const rsort = (list, loose) => list.sort((a, b) => compareBuild(b, a, loose))
+module.exports = rsort
+
+},{"./compare-build":42}],60:[function(require,module,exports){
+const Range = require('../classes/range')
+const satisfies = (version, range, options) => {
+  try {
+    range = new Range(range, options)
+  } catch (er) {
+    return false
+  }
+  return range.test(version)
+}
+module.exports = satisfies
+
+},{"../classes/range":37}],61:[function(require,module,exports){
+const compareBuild = require('./compare-build')
+const sort = (list, loose) => list.sort((a, b) => compareBuild(a, b, loose))
+module.exports = sort
+
+},{"./compare-build":42}],62:[function(require,module,exports){
+const parse = require('./parse')
+const valid = (version, options) => {
+  const v = parse(version, options)
+  return v ? v.version : null
+}
+module.exports = valid
+
+},{"./parse":55}],63:[function(require,module,exports){
+// just pre-load all the stuff that index.js lazily exports
+const internalRe = require('./internal/re')
+const constants = require('./internal/constants')
+const SemVer = require('./classes/semver')
+const identifiers = require('./internal/identifiers')
+const parse = require('./functions/parse')
+const valid = require('./functions/valid')
+const clean = require('./functions/clean')
+const inc = require('./functions/inc')
+const diff = require('./functions/diff')
+const major = require('./functions/major')
+const minor = require('./functions/minor')
+const patch = require('./functions/patch')
+const prerelease = require('./functions/prerelease')
+const compare = require('./functions/compare')
+const rcompare = require('./functions/rcompare')
+const compareLoose = require('./functions/compare-loose')
+const compareBuild = require('./functions/compare-build')
+const sort = require('./functions/sort')
+const rsort = require('./functions/rsort')
+const gt = require('./functions/gt')
+const lt = require('./functions/lt')
+const eq = require('./functions/eq')
+const neq = require('./functions/neq')
+const gte = require('./functions/gte')
+const lte = require('./functions/lte')
+const cmp = require('./functions/cmp')
+const coerce = require('./functions/coerce')
+const Comparator = require('./classes/comparator')
+const Range = require('./classes/range')
+const satisfies = require('./functions/satisfies')
+const toComparators = require('./ranges/to-comparators')
+const maxSatisfying = require('./ranges/max-satisfying')
+const minSatisfying = require('./ranges/min-satisfying')
+const minVersion = require('./ranges/min-version')
+const validRange = require('./ranges/valid')
+const outside = require('./ranges/outside')
+const gtr = require('./ranges/gtr')
+const ltr = require('./ranges/ltr')
+const intersects = require('./ranges/intersects')
+const simplifyRange = require('./ranges/simplify')
+const subset = require('./ranges/subset')
+module.exports = {
+  parse,
+  valid,
+  clean,
+  inc,
+  diff,
+  major,
+  minor,
+  patch,
+  prerelease,
+  compare,
+  rcompare,
+  compareLoose,
+  compareBuild,
+  sort,
+  rsort,
+  gt,
+  lt,
+  eq,
+  neq,
+  gte,
+  lte,
+  cmp,
+  coerce,
+  Comparator,
+  Range,
+  satisfies,
+  toComparators,
+  maxSatisfying,
+  minSatisfying,
+  minVersion,
+  validRange,
+  outside,
+  gtr,
+  ltr,
+  intersects,
+  simplifyRange,
+  subset,
+  SemVer,
+  re: internalRe.re,
+  src: internalRe.src,
+  tokens: internalRe.t,
+  SEMVER_SPEC_VERSION: constants.SEMVER_SPEC_VERSION,
+  RELEASE_TYPES: constants.RELEASE_TYPES,
+  compareIdentifiers: identifiers.compareIdentifiers,
+  rcompareIdentifiers: identifiers.rcompareIdentifiers,
+}
+
+},{"./classes/comparator":36,"./classes/range":37,"./classes/semver":38,"./functions/clean":39,"./functions/cmp":40,"./functions/coerce":41,"./functions/compare":44,"./functions/compare-build":42,"./functions/compare-loose":43,"./functions/diff":45,"./functions/eq":46,"./functions/gt":47,"./functions/gte":48,"./functions/inc":49,"./functions/lt":50,"./functions/lte":51,"./functions/major":52,"./functions/minor":53,"./functions/neq":54,"./functions/parse":55,"./functions/patch":56,"./functions/prerelease":57,"./functions/rcompare":58,"./functions/rsort":59,"./functions/satisfies":60,"./functions/sort":61,"./functions/valid":62,"./internal/constants":64,"./internal/identifiers":66,"./internal/re":68,"./ranges/gtr":69,"./ranges/intersects":70,"./ranges/ltr":71,"./ranges/max-satisfying":72,"./ranges/min-satisfying":73,"./ranges/min-version":74,"./ranges/outside":75,"./ranges/simplify":76,"./ranges/subset":77,"./ranges/to-comparators":78,"./ranges/valid":79}],64:[function(require,module,exports){
+// Note: this is the semver.org version of the spec that it implements
+// Not necessarily the package version of this code.
+const SEMVER_SPEC_VERSION = '2.0.0'
+
+const MAX_LENGTH = 256
+const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER ||
+/* istanbul ignore next */ 9007199254740991
+
+// Max safe segment length for coercion.
+const MAX_SAFE_COMPONENT_LENGTH = 16
+
+// Max safe length for a build identifier. The max length minus 6 characters for
+// the shortest version with a build 0.0.0+BUILD.
+const MAX_SAFE_BUILD_LENGTH = MAX_LENGTH - 6
+
+const RELEASE_TYPES = [
+  'major',
+  'premajor',
+  'minor',
+  'preminor',
+  'patch',
+  'prepatch',
+  'prerelease',
+]
+
+module.exports = {
+  MAX_LENGTH,
+  MAX_SAFE_COMPONENT_LENGTH,
+  MAX_SAFE_BUILD_LENGTH,
+  MAX_SAFE_INTEGER,
+  RELEASE_TYPES,
+  SEMVER_SPEC_VERSION,
+  FLAG_INCLUDE_PRERELEASE: 0b001,
+  FLAG_LOOSE: 0b010,
+}
+
+},{}],65:[function(require,module,exports){
+(function (process){(function (){
+const debug = (
+  typeof process === 'object' &&
+  process.env &&
+  process.env.NODE_DEBUG &&
+  /\bsemver\b/i.test(process.env.NODE_DEBUG)
+) ? (...args) => console.error('SEMVER', ...args)
+  : () => {}
+
+module.exports = debug
+
+}).call(this)}).call(this,require('_process'))
+},{"_process":120}],66:[function(require,module,exports){
+const numeric = /^[0-9]+$/
+const compareIdentifiers = (a, b) => {
+  const anum = numeric.test(a)
+  const bnum = numeric.test(b)
+
+  if (anum && bnum) {
+    a = +a
+    b = +b
+  }
+
+  return a === b ? 0
+    : (anum && !bnum) ? -1
+    : (bnum && !anum) ? 1
+    : a < b ? -1
+    : 1
+}
+
+const rcompareIdentifiers = (a, b) => compareIdentifiers(b, a)
+
+module.exports = {
+  compareIdentifiers,
+  rcompareIdentifiers,
+}
+
+},{}],67:[function(require,module,exports){
+// parse out just the options we care about
+const looseOption = Object.freeze({ loose: true })
+const emptyOpts = Object.freeze({ })
+const parseOptions = options => {
+  if (!options) {
+    return emptyOpts
+  }
+
+  if (typeof options !== 'object') {
+    return looseOption
+  }
+
+  return options
+}
+module.exports = parseOptions
+
+},{}],68:[function(require,module,exports){
+const {
+  MAX_SAFE_COMPONENT_LENGTH,
+  MAX_SAFE_BUILD_LENGTH,
+  MAX_LENGTH,
+} = require('./constants')
+const debug = require('./debug')
+exports = module.exports = {}
+
+// The actual regexps go on exports.re
+const re = exports.re = []
+const safeRe = exports.safeRe = []
+const src = exports.src = []
+const t = exports.t = {}
+let R = 0
+
+const LETTERDASHNUMBER = '[a-zA-Z0-9-]'
+
+// Replace some greedy regex tokens to prevent regex dos issues. These regex are
+// used internally via the safeRe object since all inputs in this library get
+// normalized first to trim and collapse all extra whitespace. The original
+// regexes are exported for userland consumption and lower level usage. A
+// future breaking change could export the safer regex only with a note that
+// all input should have extra whitespace removed.
+const safeRegexReplacements = [
+  ['\\s', 1],
+  ['\\d', MAX_LENGTH],
+  [LETTERDASHNUMBER, MAX_SAFE_BUILD_LENGTH],
+]
+
+const makeSafeRegex = (value) => {
+  for (const [token, max] of safeRegexReplacements) {
+    value = value
+      .split(`${token}*`).join(`${token}{0,${max}}`)
+      .split(`${token}+`).join(`${token}{1,${max}}`)
+  }
+  return value
+}
+
+const createToken = (name, value, isGlobal) => {
+  const safe = makeSafeRegex(value)
+  const index = R++
+  debug(name, index, value)
+  t[name] = index
+  src[index] = value
+  re[index] = new RegExp(value, isGlobal ? 'g' : undefined)
+  safeRe[index] = new RegExp(safe, isGlobal ? 'g' : undefined)
+}
+
+// The following Regular Expressions can be used for tokenizing,
+// validating, and parsing SemVer version strings.
+
+// ## Numeric Identifier
+// A single `0`, or a non-zero digit followed by zero or more digits.
+
+createToken('NUMERICIDENTIFIER', '0|[1-9]\\d*')
+createToken('NUMERICIDENTIFIERLOOSE', '\\d+')
+
+// ## Non-numeric Identifier
+// Zero or more digits, followed by a letter or hyphen, and then zero or
+// more letters, digits, or hyphens.
+
+createToken('NONNUMERICIDENTIFIER', `\\d*[a-zA-Z-]${LETTERDASHNUMBER}*`)
+
+// ## Main Version
+// Three dot-separated numeric identifiers.
+
+createToken('MAINVERSION', `(${src[t.NUMERICIDENTIFIER]})\\.` +
+                   `(${src[t.NUMERICIDENTIFIER]})\\.` +
+                   `(${src[t.NUMERICIDENTIFIER]})`)
+
+createToken('MAINVERSIONLOOSE', `(${src[t.NUMERICIDENTIFIERLOOSE]})\\.` +
+                        `(${src[t.NUMERICIDENTIFIERLOOSE]})\\.` +
+                        `(${src[t.NUMERICIDENTIFIERLOOSE]})`)
+
+// ## Pre-release Version Identifier
+// A numeric identifier, or a non-numeric identifier.
+
+createToken('PRERELEASEIDENTIFIER', `(?:${src[t.NUMERICIDENTIFIER]
+}|${src[t.NONNUMERICIDENTIFIER]})`)
+
+createToken('PRERELEASEIDENTIFIERLOOSE', `(?:${src[t.NUMERICIDENTIFIERLOOSE]
+}|${src[t.NONNUMERICIDENTIFIER]})`)
+
+// ## Pre-release Version
+// Hyphen, followed by one or more dot-separated pre-release version
+// identifiers.
+
+createToken('PRERELEASE', `(?:-(${src[t.PRERELEASEIDENTIFIER]
+}(?:\\.${src[t.PRERELEASEIDENTIFIER]})*))`)
+
+createToken('PRERELEASELOOSE', `(?:-?(${src[t.PRERELEASEIDENTIFIERLOOSE]
+}(?:\\.${src[t.PRERELEASEIDENTIFIERLOOSE]})*))`)
+
+// ## Build Metadata Identifier
+// Any combination of digits, letters, or hyphens.
+
+createToken('BUILDIDENTIFIER', `${LETTERDASHNUMBER}+`)
+
+// ## Build Metadata
+// Plus sign, followed by one or more period-separated build metadata
+// identifiers.
+
+createToken('BUILD', `(?:\\+(${src[t.BUILDIDENTIFIER]
+}(?:\\.${src[t.BUILDIDENTIFIER]})*))`)
+
+// ## Full Version String
+// A main version, followed optionally by a pre-release version and
+// build metadata.
+
+// Note that the only major, minor, patch, and pre-release sections of
+// the version string are capturing groups.  The build metadata is not a
+// capturing group, because it should not ever be used in version
+// comparison.
+
+createToken('FULLPLAIN', `v?${src[t.MAINVERSION]
+}${src[t.PRERELEASE]}?${
+  src[t.BUILD]}?`)
+
+createToken('FULL', `^${src[t.FULLPLAIN]}$`)
+
+// like full, but allows v1.2.3 and =1.2.3, which people do sometimes.
+// also, 1.0.0alpha1 (prerelease without the hyphen) which is pretty
+// common in the npm registry.
+createToken('LOOSEPLAIN', `[v=\\s]*${src[t.MAINVERSIONLOOSE]
+}${src[t.PRERELEASELOOSE]}?${
+  src[t.BUILD]}?`)
+
+createToken('LOOSE', `^${src[t.LOOSEPLAIN]}$`)
+
+createToken('GTLT', '((?:<|>)?=?)')
+
+// Something like "2.*" or "1.2.x".
+// Note that "x.x" is a valid xRange identifer, meaning "any version"
+// Only the first item is strictly required.
+createToken('XRANGEIDENTIFIERLOOSE', `${src[t.NUMERICIDENTIFIERLOOSE]}|x|X|\\*`)
+createToken('XRANGEIDENTIFIER', `${src[t.NUMERICIDENTIFIER]}|x|X|\\*`)
+
+createToken('XRANGEPLAIN', `[v=\\s]*(${src[t.XRANGEIDENTIFIER]})` +
+                   `(?:\\.(${src[t.XRANGEIDENTIFIER]})` +
+                   `(?:\\.(${src[t.XRANGEIDENTIFIER]})` +
+                   `(?:${src[t.PRERELEASE]})?${
+                     src[t.BUILD]}?` +
+                   `)?)?`)
+
+createToken('XRANGEPLAINLOOSE', `[v=\\s]*(${src[t.XRANGEIDENTIFIERLOOSE]})` +
+                        `(?:\\.(${src[t.XRANGEIDENTIFIERLOOSE]})` +
+                        `(?:\\.(${src[t.XRANGEIDENTIFIERLOOSE]})` +
+                        `(?:${src[t.PRERELEASELOOSE]})?${
+                          src[t.BUILD]}?` +
+                        `)?)?`)
+
+createToken('XRANGE', `^${src[t.GTLT]}\\s*${src[t.XRANGEPLAIN]}$`)
+createToken('XRANGELOOSE', `^${src[t.GTLT]}\\s*${src[t.XRANGEPLAINLOOSE]}$`)
+
+// Coercion.
+// Extract anything that could conceivably be a part of a valid semver
+createToken('COERCE', `${'(^|[^\\d])' +
+              '(\\d{1,'}${MAX_SAFE_COMPONENT_LENGTH}})` +
+              `(?:\\.(\\d{1,${MAX_SAFE_COMPONENT_LENGTH}}))?` +
+              `(?:\\.(\\d{1,${MAX_SAFE_COMPONENT_LENGTH}}))?` +
+              `(?:$|[^\\d])`)
+createToken('COERCERTL', src[t.COERCE], true)
+
+// Tilde ranges.
+// Meaning is "reasonably at or greater than"
+createToken('LONETILDE', '(?:~>?)')
+
+createToken('TILDETRIM', `(\\s*)${src[t.LONETILDE]}\\s+`, true)
+exports.tildeTrimReplace = '$1~'
+
+createToken('TILDE', `^${src[t.LONETILDE]}${src[t.XRANGEPLAIN]}$`)
+createToken('TILDELOOSE', `^${src[t.LONETILDE]}${src[t.XRANGEPLAINLOOSE]}$`)
+
+// Caret ranges.
+// Meaning is "at least and backwards compatible with"
+createToken('LONECARET', '(?:\\^)')
+
+createToken('CARETTRIM', `(\\s*)${src[t.LONECARET]}\\s+`, true)
+exports.caretTrimReplace = '$1^'
+
+createToken('CARET', `^${src[t.LONECARET]}${src[t.XRANGEPLAIN]}$`)
+createToken('CARETLOOSE', `^${src[t.LONECARET]}${src[t.XRANGEPLAINLOOSE]}$`)
+
+// A simple gt/lt/eq thing, or just "" to indicate "any version"
+createToken('COMPARATORLOOSE', `^${src[t.GTLT]}\\s*(${src[t.LOOSEPLAIN]})$|^$`)
+createToken('COMPARATOR', `^${src[t.GTLT]}\\s*(${src[t.FULLPLAIN]})$|^$`)
+
+// An expression to strip any whitespace between the gtlt and the thing
+// it modifies, so that `> 1.2.3` ==> `>1.2.3`
+createToken('COMPARATORTRIM', `(\\s*)${src[t.GTLT]
+}\\s*(${src[t.LOOSEPLAIN]}|${src[t.XRANGEPLAIN]})`, true)
+exports.comparatorTrimReplace = '$1$2$3'
+
+// Something like `1.2.3 - 1.2.4`
+// Note that these all use the loose form, because they'll be
+// checked against either the strict or loose comparator form
+// later.
+createToken('HYPHENRANGE', `^\\s*(${src[t.XRANGEPLAIN]})` +
+                   `\\s+-\\s+` +
+                   `(${src[t.XRANGEPLAIN]})` +
+                   `\\s*$`)
+
+createToken('HYPHENRANGELOOSE', `^\\s*(${src[t.XRANGEPLAINLOOSE]})` +
+                        `\\s+-\\s+` +
+                        `(${src[t.XRANGEPLAINLOOSE]})` +
+                        `\\s*$`)
+
+// Star ranges basically just allow anything at all.
+createToken('STAR', '(<|>)?=?\\s*\\*')
+// >=0.0.0 is like a star
+createToken('GTE0', '^\\s*>=\\s*0\\.0\\.0\\s*$')
+createToken('GTE0PRE', '^\\s*>=\\s*0\\.0\\.0-0\\s*$')
+
+},{"./constants":64,"./debug":65}],69:[function(require,module,exports){
+// Determine if version is greater than all the versions possible in the range.
+const outside = require('./outside')
+const gtr = (version, range, options) => outside(version, range, '>', options)
+module.exports = gtr
+
+},{"./outside":75}],70:[function(require,module,exports){
+const Range = require('../classes/range')
+const intersects = (r1, r2, options) => {
+  r1 = new Range(r1, options)
+  r2 = new Range(r2, options)
+  return r1.intersects(r2, options)
+}
+module.exports = intersects
+
+},{"../classes/range":37}],71:[function(require,module,exports){
+const outside = require('./outside')
+// Determine if version is less than all the versions possible in the range
+const ltr = (version, range, options) => outside(version, range, '<', options)
+module.exports = ltr
+
+},{"./outside":75}],72:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const Range = require('../classes/range')
+
+const maxSatisfying = (versions, range, options) => {
+  let max = null
+  let maxSV = null
+  let rangeObj = null
+  try {
+    rangeObj = new Range(range, options)
+  } catch (er) {
+    return null
+  }
+  versions.forEach((v) => {
+    if (rangeObj.test(v)) {
+      // satisfies(v, range, options)
+      if (!max || maxSV.compare(v) === -1) {
+        // compare(max, v, true)
+        max = v
+        maxSV = new SemVer(max, options)
+      }
+    }
+  })
+  return max
+}
+module.exports = maxSatisfying
+
+},{"../classes/range":37,"../classes/semver":38}],73:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const Range = require('../classes/range')
+const minSatisfying = (versions, range, options) => {
+  let min = null
+  let minSV = null
+  let rangeObj = null
+  try {
+    rangeObj = new Range(range, options)
+  } catch (er) {
+    return null
+  }
+  versions.forEach((v) => {
+    if (rangeObj.test(v)) {
+      // satisfies(v, range, options)
+      if (!min || minSV.compare(v) === 1) {
+        // compare(min, v, true)
+        min = v
+        minSV = new SemVer(min, options)
+      }
+    }
+  })
+  return min
+}
+module.exports = minSatisfying
+
+},{"../classes/range":37,"../classes/semver":38}],74:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const Range = require('../classes/range')
+const gt = require('../functions/gt')
+
+const minVersion = (range, loose) => {
+  range = new Range(range, loose)
+
+  let minver = new SemVer('0.0.0')
+  if (range.test(minver)) {
+    return minver
+  }
+
+  minver = new SemVer('0.0.0-0')
+  if (range.test(minver)) {
+    return minver
+  }
+
+  minver = null
+  for (let i = 0; i < range.set.length; ++i) {
+    const comparators = range.set[i]
+
+    let setMin = null
+    comparators.forEach((comparator) => {
+      // Clone to avoid manipulating the comparator's semver object.
+      const compver = new SemVer(comparator.semver.version)
+      switch (comparator.operator) {
+        case '>':
+          if (compver.prerelease.length === 0) {
+            compver.patch++
+          } else {
+            compver.prerelease.push(0)
+          }
+          compver.raw = compver.format()
+          /* fallthrough */
+        case '':
+        case '>=':
+          if (!setMin || gt(compver, setMin)) {
+            setMin = compver
+          }
+          break
+        case '<':
+        case '<=':
+          /* Ignore maximum versions */
+          break
+        /* istanbul ignore next */
+        default:
+          throw new Error(`Unexpected operation: ${comparator.operator}`)
+      }
+    })
+    if (setMin && (!minver || gt(minver, setMin))) {
+      minver = setMin
+    }
+  }
+
+  if (minver && range.test(minver)) {
+    return minver
+  }
+
+  return null
+}
+module.exports = minVersion
+
+},{"../classes/range":37,"../classes/semver":38,"../functions/gt":47}],75:[function(require,module,exports){
+const SemVer = require('../classes/semver')
+const Comparator = require('../classes/comparator')
+const { ANY } = Comparator
+const Range = require('../classes/range')
+const satisfies = require('../functions/satisfies')
+const gt = require('../functions/gt')
+const lt = require('../functions/lt')
+const lte = require('../functions/lte')
+const gte = require('../functions/gte')
+
+const outside = (version, range, hilo, options) => {
+  version = new SemVer(version, options)
+  range = new Range(range, options)
+
+  let gtfn, ltefn, ltfn, comp, ecomp
+  switch (hilo) {
+    case '>':
+      gtfn = gt
+      ltefn = lte
+      ltfn = lt
+      comp = '>'
+      ecomp = '>='
+      break
+    case '<':
+      gtfn = lt
+      ltefn = gte
+      ltfn = gt
+      comp = '<'
+      ecomp = '<='
+      break
+    default:
+      throw new TypeError('Must provide a hilo val of "<" or ">"')
+  }
+
+  // If it satisfies the range it is not outside
+  if (satisfies(version, range, options)) {
+    return false
+  }
+
+  // From now on, variable terms are as if we're in "gtr" mode.
+  // but note that everything is flipped for the "ltr" function.
+
+  for (let i = 0; i < range.set.length; ++i) {
+    const comparators = range.set[i]
+
+    let high = null
+    let low = null
+
+    comparators.forEach((comparator) => {
+      if (comparator.semver === ANY) {
+        comparator = new Comparator('>=0.0.0')
+      }
+      high = high || comparator
+      low = low || comparator
+      if (gtfn(comparator.semver, high.semver, options)) {
+        high = comparator
+      } else if (ltfn(comparator.semver, low.semver, options)) {
+        low = comparator
+      }
+    })
+
+    // If the edge version comparator has a operator then our version
+    // isn't outside it
+    if (high.operator === comp || high.operator === ecomp) {
+      return false
+    }
+
+    // If the lowest version comparator has an operator and our version
+    // is less than it then it isn't higher than the range
+    if ((!low.operator || low.operator === comp) &&
+        ltefn(version, low.semver)) {
+      return false
+    } else if (low.operator === ecomp && ltfn(version, low.semver)) {
+      return false
+    }
+  }
+  return true
+}
+
+module.exports = outside
+
+},{"../classes/comparator":36,"../classes/range":37,"../classes/semver":38,"../functions/gt":47,"../functions/gte":48,"../functions/lt":50,"../functions/lte":51,"../functions/satisfies":60}],76:[function(require,module,exports){
+// given a set of versions and a range, create a "simplified" range
+// that includes the same versions that the original range does
+// If the original range is shorter than the simplified one, return that.
+const satisfies = require('../functions/satisfies.js')
+const compare = require('../functions/compare.js')
+module.exports = (versions, range, options) => {
+  const set = []
+  let first = null
+  let prev = null
+  const v = versions.sort((a, b) => compare(a, b, options))
+  for (const version of v) {
+    const included = satisfies(version, range, options)
+    if (included) {
+      prev = version
+      if (!first) {
+        first = version
+      }
+    } else {
+      if (prev) {
+        set.push([first, prev])
+      }
+      prev = null
+      first = null
+    }
+  }
+  if (first) {
+    set.push([first, null])
+  }
+
+  const ranges = []
+  for (const [min, max] of set) {
+    if (min === max) {
+      ranges.push(min)
+    } else if (!max && min === v[0]) {
+      ranges.push('*')
+    } else if (!max) {
+      ranges.push(`>=${min}`)
+    } else if (min === v[0]) {
+      ranges.push(`<=${max}`)
+    } else {
+      ranges.push(`${min} - ${max}`)
+    }
+  }
+  const simplified = ranges.join(' || ')
+  const original = typeof range.raw === 'string' ? range.raw : String(range)
+  return simplified.length < original.length ? simplified : range
+}
+
+},{"../functions/compare.js":44,"../functions/satisfies.js":60}],77:[function(require,module,exports){
+const Range = require('../classes/range.js')
+const Comparator = require('../classes/comparator.js')
+const { ANY } = Comparator
+const satisfies = require('../functions/satisfies.js')
+const compare = require('../functions/compare.js')
+
+// Complex range `r1 || r2 || ...` is a subset of `R1 || R2 || ...` iff:
+// - Every simple range `r1, r2, ...` is a null set, OR
+// - Every simple range `r1, r2, ...` which is not a null set is a subset of
+//   some `R1, R2, ...`
+//
+// Simple range `c1 c2 ...` is a subset of simple range `C1 C2 ...` iff:
+// - If c is only the ANY comparator
+//   - If C is only the ANY comparator, return true
+//   - Else if in prerelease mode, return false
+//   - else replace c with `[>=0.0.0]`
+// - If C is only the ANY comparator
+//   - if in prerelease mode, return true
+//   - else replace C with `[>=0.0.0]`
+// - Let EQ be the set of = comparators in c
+// - If EQ is more than one, return true (null set)
+// - Let GT be the highest > or >= comparator in c
+// - Let LT be the lowest < or <= comparator in c
+// - If GT and LT, and GT.semver > LT.semver, return true (null set)
+// - If any C is a = range, and GT or LT are set, return false
+// - If EQ
+//   - If GT, and EQ does not satisfy GT, return true (null set)
+//   - If LT, and EQ does not satisfy LT, return true (null set)
+//   - If EQ satisfies every C, return true
+//   - Else return false
+// - If GT
+//   - If GT.semver is lower than any > or >= comp in C, return false
+//   - If GT is >=, and GT.semver does not satisfy every C, return false
+//   - If GT.semver has a prerelease, and not in prerelease mode
+//     - If no C has a prerelease and the GT.semver tuple, return false
+// - If LT
+//   - If LT.semver is greater than any < or <= comp in C, return false
+//   - If LT is <=, and LT.semver does not satisfy every C, return false
+//   - If GT.semver has a prerelease, and not in prerelease mode
+//     - If no C has a prerelease and the LT.semver tuple, return false
+// - Else return true
+
+const subset = (sub, dom, options = {}) => {
+  if (sub === dom) {
+    return true
+  }
+
+  sub = new Range(sub, options)
+  dom = new Range(dom, options)
+  let sawNonNull = false
+
+  OUTER: for (const simpleSub of sub.set) {
+    for (const simpleDom of dom.set) {
+      const isSub = simpleSubset(simpleSub, simpleDom, options)
+      sawNonNull = sawNonNull || isSub !== null
+      if (isSub) {
+        continue OUTER
+      }
+    }
+    // the null set is a subset of everything, but null simple ranges in
+    // a complex range should be ignored.  so if we saw a non-null range,
+    // then we know this isn't a subset, but if EVERY simple range was null,
+    // then it is a subset.
+    if (sawNonNull) {
+      return false
+    }
+  }
+  return true
+}
+
+const minimumVersionWithPreRelease = [new Comparator('>=0.0.0-0')]
+const minimumVersion = [new Comparator('>=0.0.0')]
+
+const simpleSubset = (sub, dom, options) => {
+  if (sub === dom) {
+    return true
+  }
+
+  if (sub.length === 1 && sub[0].semver === ANY) {
+    if (dom.length === 1 && dom[0].semver === ANY) {
+      return true
+    } else if (options.includePrerelease) {
+      sub = minimumVersionWithPreRelease
+    } else {
+      sub = minimumVersion
+    }
+  }
+
+  if (dom.length === 1 && dom[0].semver === ANY) {
+    if (options.includePrerelease) {
+      return true
+    } else {
+      dom = minimumVersion
+    }
+  }
+
+  const eqSet = new Set()
+  let gt, lt
+  for (const c of sub) {
+    if (c.operator === '>' || c.operator === '>=') {
+      gt = higherGT(gt, c, options)
+    } else if (c.operator === '<' || c.operator === '<=') {
+      lt = lowerLT(lt, c, options)
+    } else {
+      eqSet.add(c.semver)
+    }
+  }
+
+  if (eqSet.size > 1) {
+    return null
+  }
+
+  let gtltComp
+  if (gt && lt) {
+    gtltComp = compare(gt.semver, lt.semver, options)
+    if (gtltComp > 0) {
+      return null
+    } else if (gtltComp === 0 && (gt.operator !== '>=' || lt.operator !== '<=')) {
+      return null
+    }
+  }
+
+  // will iterate one or zero times
+  for (const eq of eqSet) {
+    if (gt && !satisfies(eq, String(gt), options)) {
+      return null
+    }
+
+    if (lt && !satisfies(eq, String(lt), options)) {
+      return null
+    }
+
+    for (const c of dom) {
+      if (!satisfies(eq, String(c), options)) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  let higher, lower
+  let hasDomLT, hasDomGT
+  // if the subset has a prerelease, we need a comparator in the superset
+  // with the same tuple and a prerelease, or it's not a subset
+  let needDomLTPre = lt &&
+    !options.includePrerelease &&
+    lt.semver.prerelease.length ? lt.semver : false
+  let needDomGTPre = gt &&
+    !options.includePrerelease &&
+    gt.semver.prerelease.length ? gt.semver : false
+  // exception: <1.2.3-0 is the same as <1.2.3
+  if (needDomLTPre && needDomLTPre.prerelease.length === 1 &&
+      lt.operator === '<' && needDomLTPre.prerelease[0] === 0) {
+    needDomLTPre = false
+  }
+
+  for (const c of dom) {
+    hasDomGT = hasDomGT || c.operator === '>' || c.operator === '>='
+    hasDomLT = hasDomLT || c.operator === '<' || c.operator === '<='
+    if (gt) {
+      if (needDomGTPre) {
+        if (c.semver.prerelease && c.semver.prerelease.length &&
+            c.semver.major === needDomGTPre.major &&
+            c.semver.minor === needDomGTPre.minor &&
+            c.semver.patch === needDomGTPre.patch) {
+          needDomGTPre = false
+        }
+      }
+      if (c.operator === '>' || c.operator === '>=') {
+        higher = higherGT(gt, c, options)
+        if (higher === c && higher !== gt) {
+          return false
+        }
+      } else if (gt.operator === '>=' && !satisfies(gt.semver, String(c), options)) {
+        return false
+      }
+    }
+    if (lt) {
+      if (needDomLTPre) {
+        if (c.semver.prerelease && c.semver.prerelease.length &&
+            c.semver.major === needDomLTPre.major &&
+            c.semver.minor === needDomLTPre.minor &&
+            c.semver.patch === needDomLTPre.patch) {
+          needDomLTPre = false
+        }
+      }
+      if (c.operator === '<' || c.operator === '<=') {
+        lower = lowerLT(lt, c, options)
+        if (lower === c && lower !== lt) {
+          return false
+        }
+      } else if (lt.operator === '<=' && !satisfies(lt.semver, String(c), options)) {
+        return false
+      }
+    }
+    if (!c.operator && (lt || gt) && gtltComp !== 0) {
+      return false
+    }
+  }
+
+  // if there was a < or >, and nothing in the dom, then must be false
+  // UNLESS it was limited by another range in the other direction.
+  // Eg, >1.0.0 <1.0.1 is still a subset of <2.0.0
+  if (gt && hasDomLT && !lt && gtltComp !== 0) {
+    return false
+  }
+
+  if (lt && hasDomGT && !gt && gtltComp !== 0) {
+    return false
+  }
+
+  // we needed a prerelease range in a specific tuple, but didn't get one
+  // then this isn't a subset.  eg >=1.2.3-pre is not a subset of >=1.0.0,
+  // because it includes prereleases in the 1.2.3 tuple
+  if (needDomGTPre || needDomLTPre) {
+    return false
+  }
+
+  return true
+}
+
+// >=1.2.3 is lower than >1.2.3
+const higherGT = (a, b, options) => {
+  if (!a) {
+    return b
+  }
+  const comp = compare(a.semver, b.semver, options)
+  return comp > 0 ? a
+    : comp < 0 ? b
+    : b.operator === '>' && a.operator === '>=' ? b
+    : a
+}
+
+// <=1.2.3 is higher than <1.2.3
+const lowerLT = (a, b, options) => {
+  if (!a) {
+    return b
+  }
+  const comp = compare(a.semver, b.semver, options)
+  return comp < 0 ? a
+    : comp > 0 ? b
+    : b.operator === '<' && a.operator === '<=' ? b
+    : a
+}
+
+module.exports = subset
+
+},{"../classes/comparator.js":36,"../classes/range.js":37,"../functions/compare.js":44,"../functions/satisfies.js":60}],78:[function(require,module,exports){
+const Range = require('../classes/range')
+
+// Mostly just for testing and legacy API reasons
+const toComparators = (range, options) =>
+  new Range(range, options).set
+    .map(comp => comp.map(c => c.value).join(' ').trim().split(' '))
+
+module.exports = toComparators
+
+},{"../classes/range":37}],79:[function(require,module,exports){
+const Range = require('../classes/range')
+const validRange = (range, options) => {
+  try {
+    // Return '*' instead of '' so that truthiness works.
+    // This will throw if it's invalid anyway
+    return new Range(range, options).range || '*'
+  } catch (er) {
+    return null
+  }
+}
+module.exports = validRange
+
+},{"../classes/range":37}],80:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.output = exports.exists = exports.hash = exports.bytes = exports.bool = exports.number = void 0;
+function number(n) {
+    if (!Number.isSafeInteger(n) || n < 0)
+        throw new Error(`Wrong positive integer: ${n}`);
+}
+exports.number = number;
+function bool(b) {
+    if (typeof b !== 'boolean')
+        throw new Error(`Expected boolean, not ${b}`);
+}
+exports.bool = bool;
+function bytes(b, ...lengths) {
+    if (!(b instanceof Uint8Array))
+        throw new Error('Expected Uint8Array');
+    if (lengths.length > 0 && !lengths.includes(b.length))
+        throw new Error(`Expected Uint8Array of length ${lengths}, not of length=${b.length}`);
+}
+exports.bytes = bytes;
+function hash(hash) {
+    if (typeof hash !== 'function' || typeof hash.create !== 'function')
+        throw new Error('Hash should be wrapped by utils.wrapConstructor');
+    number(hash.outputLen);
+    number(hash.blockLen);
+}
+exports.hash = hash;
+function exists(instance, checkFinished = true) {
+    if (instance.destroyed)
+        throw new Error('Hash instance has been destroyed');
+    if (checkFinished && instance.finished)
+        throw new Error('Hash#digest() has already been called');
+}
+exports.exists = exists;
+function output(out, instance) {
+    bytes(out);
+    const min = instance.outputLen;
+    if (out.length < min) {
+        throw new Error(`digestInto() expects output buffer of length at least ${min}`);
+    }
+}
+exports.output = output;
+const assert = { number, bool, bytes, hash, exists, output };
+exports.default = assert;
+
+},{}],81:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.add5L = exports.add5H = exports.add4H = exports.add4L = exports.add3H = exports.add3L = exports.add = exports.rotlBL = exports.rotlBH = exports.rotlSL = exports.rotlSH = exports.rotr32L = exports.rotr32H = exports.rotrBL = exports.rotrBH = exports.rotrSL = exports.rotrSH = exports.shrSL = exports.shrSH = exports.toBig = exports.split = exports.fromBig = void 0;
+const U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
+const _32n = /* @__PURE__ */ BigInt(32);
+// We are not using BigUint64Array, because they are extremely slow as per 2022
+function fromBig(n, le = false) {
+    if (le)
+        return { h: Number(n & U32_MASK64), l: Number((n >> _32n) & U32_MASK64) };
+    return { h: Number((n >> _32n) & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
+}
+exports.fromBig = fromBig;
+function split(lst, le = false) {
+    let Ah = new Uint32Array(lst.length);
+    let Al = new Uint32Array(lst.length);
+    for (let i = 0; i < lst.length; i++) {
+        const { h, l } = fromBig(lst[i], le);
+        [Ah[i], Al[i]] = [h, l];
+    }
+    return [Ah, Al];
+}
+exports.split = split;
+const toBig = (h, l) => (BigInt(h >>> 0) << _32n) | BigInt(l >>> 0);
+exports.toBig = toBig;
+// for Shift in [0, 32)
+const shrSH = (h, _l, s) => h >>> s;
+exports.shrSH = shrSH;
+const shrSL = (h, l, s) => (h << (32 - s)) | (l >>> s);
+exports.shrSL = shrSL;
+// Right rotate for Shift in [1, 32)
+const rotrSH = (h, l, s) => (h >>> s) | (l << (32 - s));
+exports.rotrSH = rotrSH;
+const rotrSL = (h, l, s) => (h << (32 - s)) | (l >>> s);
+exports.rotrSL = rotrSL;
+// Right rotate for Shift in (32, 64), NOTE: 32 is special case.
+const rotrBH = (h, l, s) => (h << (64 - s)) | (l >>> (s - 32));
+exports.rotrBH = rotrBH;
+const rotrBL = (h, l, s) => (h >>> (s - 32)) | (l << (64 - s));
+exports.rotrBL = rotrBL;
+// Right rotate for shift===32 (just swaps l&h)
+const rotr32H = (_h, l) => l;
+exports.rotr32H = rotr32H;
+const rotr32L = (h, _l) => h;
+exports.rotr32L = rotr32L;
+// Left rotate for Shift in [1, 32)
+const rotlSH = (h, l, s) => (h << s) | (l >>> (32 - s));
+exports.rotlSH = rotlSH;
+const rotlSL = (h, l, s) => (l << s) | (h >>> (32 - s));
+exports.rotlSL = rotlSL;
+// Left rotate for Shift in (32, 64), NOTE: 32 is special case.
+const rotlBH = (h, l, s) => (l << (s - 32)) | (h >>> (64 - s));
+exports.rotlBH = rotlBH;
+const rotlBL = (h, l, s) => (h << (s - 32)) | (l >>> (64 - s));
+exports.rotlBL = rotlBL;
+// JS uses 32-bit signed integers for bitwise operations which means we cannot
+// simple take carry out of low bit sum by shift, we need to use division.
+function add(Ah, Al, Bh, Bl) {
+    const l = (Al >>> 0) + (Bl >>> 0);
+    return { h: (Ah + Bh + ((l / 2 ** 32) | 0)) | 0, l: l | 0 };
+}
+exports.add = add;
+// Addition with more than 2 elements
+const add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+exports.add3L = add3L;
+const add3H = (low, Ah, Bh, Ch) => (Ah + Bh + Ch + ((low / 2 ** 32) | 0)) | 0;
+exports.add3H = add3H;
+const add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
+exports.add4L = add4L;
+const add4H = (low, Ah, Bh, Ch, Dh) => (Ah + Bh + Ch + Dh + ((low / 2 ** 32) | 0)) | 0;
+exports.add4H = add4H;
+const add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
+exports.add5L = add5L;
+const add5H = (low, Ah, Bh, Ch, Dh, Eh) => (Ah + Bh + Ch + Dh + Eh + ((low / 2 ** 32) | 0)) | 0;
+exports.add5H = add5H;
+// prettier-ignore
+const u64 = {
+    fromBig, split, toBig,
+    shrSH, shrSL,
+    rotrSH, rotrSL, rotrBH, rotrBL,
+    rotr32H, rotr32L,
+    rotlSH, rotlSL, rotlBH, rotlBL,
+    add, add3L, add3H, add4L, add4H, add5H, add5L,
+};
+exports.default = u64;
+
+},{}],82:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.crypto = void 0;
+exports.crypto = typeof globalThis === 'object' && 'crypto' in globalThis ? globalThis.crypto : undefined;
+
+},{}],83:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.shake256 = exports.shake128 = exports.keccak_512 = exports.keccak_384 = exports.keccak_256 = exports.keccak_224 = exports.sha3_512 = exports.sha3_384 = exports.sha3_256 = exports.sha3_224 = exports.Keccak = exports.keccakP = void 0;
+const _assert_js_1 = require("./_assert.js");
+const _u64_js_1 = require("./_u64.js");
+const utils_js_1 = require("./utils.js");
+// SHA3 (keccak) is based on a new design: basically, the internal state is bigger than output size.
+// It's called a sponge function.
+// Various per round constants calculations
+const [SHA3_PI, SHA3_ROTL, _SHA3_IOTA] = [[], [], []];
+const _0n = /* @__PURE__ */ BigInt(0);
+const _1n = /* @__PURE__ */ BigInt(1);
+const _2n = /* @__PURE__ */ BigInt(2);
+const _7n = /* @__PURE__ */ BigInt(7);
+const _256n = /* @__PURE__ */ BigInt(256);
+const _0x71n = /* @__PURE__ */ BigInt(0x71);
+for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
+    // Pi
+    [x, y] = [y, (2 * x + 3 * y) % 5];
+    SHA3_PI.push(2 * (5 * y + x));
+    // Rotational
+    SHA3_ROTL.push((((round + 1) * (round + 2)) / 2) % 64);
+    // Iota
+    let t = _0n;
+    for (let j = 0; j < 7; j++) {
+        R = ((R << _1n) ^ ((R >> _7n) * _0x71n)) % _256n;
+        if (R & _2n)
+            t ^= _1n << ((_1n << /* @__PURE__ */ BigInt(j)) - _1n);
+    }
+    _SHA3_IOTA.push(t);
+}
+const [SHA3_IOTA_H, SHA3_IOTA_L] = /* @__PURE__ */ (0, _u64_js_1.split)(_SHA3_IOTA, true);
+// Left rotation (without 0, 32, 64)
+const rotlH = (h, l, s) => (s > 32 ? (0, _u64_js_1.rotlBH)(h, l, s) : (0, _u64_js_1.rotlSH)(h, l, s));
+const rotlL = (h, l, s) => (s > 32 ? (0, _u64_js_1.rotlBL)(h, l, s) : (0, _u64_js_1.rotlSL)(h, l, s));
+// Same as keccakf1600, but allows to skip some rounds
+function keccakP(s, rounds = 24) {
+    const B = new Uint32Array(5 * 2);
+    // NOTE: all indices are x2 since we store state as u32 instead of u64 (bigints to slow in js)
+    for (let round = 24 - rounds; round < 24; round++) {
+        // Theta θ
+        for (let x = 0; x < 10; x++)
+            B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+        for (let x = 0; x < 10; x += 2) {
+            const idx1 = (x + 8) % 10;
+            const idx0 = (x + 2) % 10;
+            const B0 = B[idx0];
+            const B1 = B[idx0 + 1];
+            const Th = rotlH(B0, B1, 1) ^ B[idx1];
+            const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+            for (let y = 0; y < 50; y += 10) {
+                s[x + y] ^= Th;
+                s[x + y + 1] ^= Tl;
+            }
+        }
+        // Rho (ρ) and Pi (π)
+        let curH = s[2];
+        let curL = s[3];
+        for (let t = 0; t < 24; t++) {
+            const shift = SHA3_ROTL[t];
+            const Th = rotlH(curH, curL, shift);
+            const Tl = rotlL(curH, curL, shift);
+            const PI = SHA3_PI[t];
+            curH = s[PI];
+            curL = s[PI + 1];
+            s[PI] = Th;
+            s[PI + 1] = Tl;
+        }
+        // Chi (χ)
+        for (let y = 0; y < 50; y += 10) {
+            for (let x = 0; x < 10; x++)
+                B[x] = s[y + x];
+            for (let x = 0; x < 10; x++)
+                s[y + x] ^= ~B[(x + 2) % 10] & B[(x + 4) % 10];
+        }
+        // Iota (ι)
+        s[0] ^= SHA3_IOTA_H[round];
+        s[1] ^= SHA3_IOTA_L[round];
+    }
+    B.fill(0);
+}
+exports.keccakP = keccakP;
+class Keccak extends utils_js_1.Hash {
+    // NOTE: we accept arguments in bytes instead of bits here.
+    constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+        super();
+        this.blockLen = blockLen;
+        this.suffix = suffix;
+        this.outputLen = outputLen;
+        this.enableXOF = enableXOF;
+        this.rounds = rounds;
+        this.pos = 0;
+        this.posOut = 0;
+        this.finished = false;
+        this.destroyed = false;
+        // Can be passed from user as dkLen
+        (0, _assert_js_1.number)(outputLen);
+        // 1600 = 5x5 matrix of 64bit.  1600 bits === 200 bytes
+        if (0 >= this.blockLen || this.blockLen >= 200)
+            throw new Error('Sha3 supports only keccak-f1600 function');
+        this.state = new Uint8Array(200);
+        this.state32 = (0, utils_js_1.u32)(this.state);
+    }
+    keccak() {
+        keccakP(this.state32, this.rounds);
+        this.posOut = 0;
+        this.pos = 0;
+    }
+    update(data) {
+        (0, _assert_js_1.exists)(this);
+        const { blockLen, state } = this;
+        data = (0, utils_js_1.toBytes)(data);
+        const len = data.length;
+        for (let pos = 0; pos < len;) {
+            const take = Math.min(blockLen - this.pos, len - pos);
+            for (let i = 0; i < take; i++)
+                state[this.pos++] ^= data[pos++];
+            if (this.pos === blockLen)
+                this.keccak();
+        }
+        return this;
+    }
+    finish() {
+        if (this.finished)
+            return;
+        this.finished = true;
+        const { state, suffix, pos, blockLen } = this;
+        // Do the padding
+        state[pos] ^= suffix;
+        if ((suffix & 0x80) !== 0 && pos === blockLen - 1)
+            this.keccak();
+        state[blockLen - 1] ^= 0x80;
+        this.keccak();
+    }
+    writeInto(out) {
+        (0, _assert_js_1.exists)(this, false);
+        (0, _assert_js_1.bytes)(out);
+        this.finish();
+        const bufferOut = this.state;
+        const { blockLen } = this;
+        for (let pos = 0, len = out.length; pos < len;) {
+            if (this.posOut >= blockLen)
+                this.keccak();
+            const take = Math.min(blockLen - this.posOut, len - pos);
+            out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+            this.posOut += take;
+            pos += take;
+        }
+        return out;
+    }
+    xofInto(out) {
+        // Sha3/Keccak usage with XOF is probably mistake, only SHAKE instances can do XOF
+        if (!this.enableXOF)
+            throw new Error('XOF is not possible for this instance');
+        return this.writeInto(out);
+    }
+    xof(bytes) {
+        (0, _assert_js_1.number)(bytes);
+        return this.xofInto(new Uint8Array(bytes));
+    }
+    digestInto(out) {
+        (0, _assert_js_1.output)(out, this);
+        if (this.finished)
+            throw new Error('digest() was already called');
+        this.writeInto(out);
+        this.destroy();
+        return out;
+    }
+    digest() {
+        return this.digestInto(new Uint8Array(this.outputLen));
+    }
+    destroy() {
+        this.destroyed = true;
+        this.state.fill(0);
+    }
+    _cloneInto(to) {
+        const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+        to || (to = new Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
+        to.state32.set(this.state32);
+        to.pos = this.pos;
+        to.posOut = this.posOut;
+        to.finished = this.finished;
+        to.rounds = rounds;
+        // Suffix can change in cSHAKE
+        to.suffix = suffix;
+        to.outputLen = outputLen;
+        to.enableXOF = enableXOF;
+        to.destroyed = this.destroyed;
+        return to;
+    }
+}
+exports.Keccak = Keccak;
+const gen = (suffix, blockLen, outputLen) => (0, utils_js_1.wrapConstructor)(() => new Keccak(blockLen, suffix, outputLen));
+exports.sha3_224 = gen(0x06, 144, 224 / 8);
+/**
+ * SHA3-256 hash function
+ * @param message - that would be hashed
+ */
+exports.sha3_256 = gen(0x06, 136, 256 / 8);
+exports.sha3_384 = gen(0x06, 104, 384 / 8);
+exports.sha3_512 = gen(0x06, 72, 512 / 8);
+exports.keccak_224 = gen(0x01, 144, 224 / 8);
+/**
+ * keccak-256 hash function. Different from SHA3-256.
+ * @param message - that would be hashed
+ */
+exports.keccak_256 = gen(0x01, 136, 256 / 8);
+exports.keccak_384 = gen(0x01, 104, 384 / 8);
+exports.keccak_512 = gen(0x01, 72, 512 / 8);
+const genShake = (suffix, blockLen, outputLen) => (0, utils_js_1.wrapXOFConstructorWithOpts)((opts = {}) => new Keccak(blockLen, suffix, opts.dkLen === undefined ? outputLen : opts.dkLen, true));
+exports.shake128 = genShake(0x1f, 168, 128 / 8);
+exports.shake256 = genShake(0x1f, 136, 256 / 8);
+
+},{"./_assert.js":80,"./_u64.js":81,"./utils.js":84}],84:[function(require,module,exports){
+"use strict";
+/*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.randomBytes = exports.wrapXOFConstructorWithOpts = exports.wrapConstructorWithOpts = exports.wrapConstructor = exports.checkOpts = exports.Hash = exports.concatBytes = exports.toBytes = exports.utf8ToBytes = exports.asyncLoop = exports.nextTick = exports.hexToBytes = exports.bytesToHex = exports.isLE = exports.rotr = exports.createView = exports.u32 = exports.u8 = void 0;
+// We use WebCrypto aka globalThis.crypto, which exists in browsers and node.js 16+.
+// node.js versions earlier than v19 don't declare it in global scope.
+// For node.js, package.json#exports field mapping rewrites import
+// from `crypto` to `cryptoNode`, which imports native module.
+// Makes the utils un-importable in browsers without a bundler.
+// Once node.js 18 is deprecated, we can just drop the import.
+const crypto_1 = require("@noble/hashes/crypto");
+const u8a = (a) => a instanceof Uint8Array;
+// Cast array to different type
+const u8 = (arr) => new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+exports.u8 = u8;
+const u32 = (arr) => new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+exports.u32 = u32;
+// Cast array to view
+const createView = (arr) => new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+exports.createView = createView;
+// The rotate right (circular right shift) operation for uint32
+const rotr = (word, shift) => (word << (32 - shift)) | (word >>> shift);
+exports.rotr = rotr;
+// big-endian hardware is rare. Just in case someone still decides to run hashes:
+// early-throw an error because we don't support BE yet.
+exports.isLE = new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
+if (!exports.isLE)
+    throw new Error('Non little-endian hardware is not supported');
+const hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+/**
+ * @example bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])) // 'cafe0123'
+ */
+function bytesToHex(bytes) {
+    if (!u8a(bytes))
+        throw new Error('Uint8Array expected');
+    // pre-caching improves the speed 6x
+    let hex = '';
+    for (let i = 0; i < bytes.length; i++) {
+        hex += hexes[bytes[i]];
+    }
+    return hex;
+}
+exports.bytesToHex = bytesToHex;
+/**
+ * @example hexToBytes('cafe0123') // Uint8Array.from([0xca, 0xfe, 0x01, 0x23])
+ */
+function hexToBytes(hex) {
+    if (typeof hex !== 'string')
+        throw new Error('hex string expected, got ' + typeof hex);
+    const len = hex.length;
+    if (len % 2)
+        throw new Error('padded hex string expected, got unpadded hex of length ' + len);
+    const array = new Uint8Array(len / 2);
+    for (let i = 0; i < array.length; i++) {
+        const j = i * 2;
+        const hexByte = hex.slice(j, j + 2);
+        const byte = Number.parseInt(hexByte, 16);
+        if (Number.isNaN(byte) || byte < 0)
+            throw new Error('Invalid byte sequence');
+        array[i] = byte;
+    }
+    return array;
+}
+exports.hexToBytes = hexToBytes;
+// There is no setImmediate in browser and setTimeout is slow.
+// call of async fn will return Promise, which will be fullfiled only on
+// next scheduler queue processing step and this is exactly what we need.
+const nextTick = async () => { };
+exports.nextTick = nextTick;
+// Returns control to thread each 'tick' ms to avoid blocking
+async function asyncLoop(iters, tick, cb) {
+    let ts = Date.now();
+    for (let i = 0; i < iters; i++) {
+        cb(i);
+        // Date.now() is not monotonic, so in case if clock goes backwards we return return control too
+        const diff = Date.now() - ts;
+        if (diff >= 0 && diff < tick)
+            continue;
+        await (0, exports.nextTick)();
+        ts += diff;
+    }
+}
+exports.asyncLoop = asyncLoop;
+/**
+ * @example utf8ToBytes('abc') // new Uint8Array([97, 98, 99])
+ */
+function utf8ToBytes(str) {
+    if (typeof str !== 'string')
+        throw new Error(`utf8ToBytes expected string, got ${typeof str}`);
+    return new Uint8Array(new TextEncoder().encode(str)); // https://bugzil.la/1681809
+}
+exports.utf8ToBytes = utf8ToBytes;
+/**
+ * Normalizes (non-hex) string or Uint8Array to Uint8Array.
+ * Warning: when Uint8Array is passed, it would NOT get copied.
+ * Keep in mind for future mutable operations.
+ */
+function toBytes(data) {
+    if (typeof data === 'string')
+        data = utf8ToBytes(data);
+    if (!u8a(data))
+        throw new Error(`expected Uint8Array, got ${typeof data}`);
+    return data;
+}
+exports.toBytes = toBytes;
+/**
+ * Copies several Uint8Arrays into one.
+ */
+function concatBytes(...arrays) {
+    const r = new Uint8Array(arrays.reduce((sum, a) => sum + a.length, 0));
+    let pad = 0; // walk through each item, ensure they have proper type
+    arrays.forEach((a) => {
+        if (!u8a(a))
+            throw new Error('Uint8Array expected');
+        r.set(a, pad);
+        pad += a.length;
+    });
+    return r;
+}
+exports.concatBytes = concatBytes;
+// For runtime check if class implements interface
+class Hash {
+    // Safe version that clones internal state
+    clone() {
+        return this._cloneInto();
+    }
+}
+exports.Hash = Hash;
+const toStr = {}.toString;
+function checkOpts(defaults, opts) {
+    if (opts !== undefined && toStr.call(opts) !== '[object Object]')
+        throw new Error('Options should be object or undefined');
+    const merged = Object.assign(defaults, opts);
+    return merged;
+}
+exports.checkOpts = checkOpts;
+function wrapConstructor(hashCons) {
+    const hashC = (msg) => hashCons().update(toBytes(msg)).digest();
+    const tmp = hashCons();
+    hashC.outputLen = tmp.outputLen;
+    hashC.blockLen = tmp.blockLen;
+    hashC.create = () => hashCons();
+    return hashC;
+}
+exports.wrapConstructor = wrapConstructor;
+function wrapConstructorWithOpts(hashCons) {
+    const hashC = (msg, opts) => hashCons(opts).update(toBytes(msg)).digest();
+    const tmp = hashCons({});
+    hashC.outputLen = tmp.outputLen;
+    hashC.blockLen = tmp.blockLen;
+    hashC.create = (opts) => hashCons(opts);
+    return hashC;
+}
+exports.wrapConstructorWithOpts = wrapConstructorWithOpts;
+function wrapXOFConstructorWithOpts(hashCons) {
+    const hashC = (msg, opts) => hashCons(opts).update(toBytes(msg)).digest();
+    const tmp = hashCons({});
+    hashC.outputLen = tmp.outputLen;
+    hashC.blockLen = tmp.blockLen;
+    hashC.create = (opts) => hashCons(opts);
+    return hashC;
+}
+exports.wrapXOFConstructorWithOpts = wrapXOFConstructorWithOpts;
+/**
+ * Secure PRNG. Uses `crypto.getRandomValues`, which defers to OS.
+ */
+function randomBytes(bytesLength = 32) {
+    if (crypto_1.crypto && typeof crypto_1.crypto.getRandomValues === 'function') {
+        return crypto_1.crypto.getRandomValues(new Uint8Array(bytesLength));
+    }
+    throw new Error('crypto.getRandomValues must be defined');
+}
+exports.randomBytes = randomBytes;
+
+},{"@noble/hashes/crypto":82}],85:[function(require,module,exports){
+"use strict";
+/*! scure-base - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.bytes = exports.stringToBytes = exports.str = exports.bytesToString = exports.hex = exports.utf8 = exports.bech32m = exports.bech32 = exports.base58check = exports.base58xmr = exports.base58xrp = exports.base58flickr = exports.base58 = exports.base64urlnopad = exports.base64url = exports.base64 = exports.base32crockford = exports.base32hex = exports.base32 = exports.base16 = exports.utils = exports.assertNumber = void 0;
+// Utilities
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function assertNumber(n) {
+    if (!Number.isSafeInteger(n))
+        throw new Error(`Wrong integer: ${n}`);
+}
+exports.assertNumber = assertNumber;
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function chain(...args) {
+    // Wrap call in closure so JIT can inline calls
+    const wrap = (a, b) => (c) => a(b(c));
+    // Construct chain of args[-1].encode(args[-2].encode([...]))
+    const encode = Array.from(args)
+        .reverse()
+        .reduce((acc, i) => (acc ? wrap(acc, i.encode) : i.encode), undefined);
+    // Construct chain of args[0].decode(args[1].decode(...))
+    const decode = args.reduce((acc, i) => (acc ? wrap(acc, i.decode) : i.decode), undefined);
+    return { encode, decode };
+}
+/**
+ * Encodes integer radix representation to array of strings using alphabet and back
+ * @__NO_SIDE_EFFECTS__
+ */
+function alphabet(alphabet) {
+    return {
+        encode: (digits) => {
+            if (!Array.isArray(digits) || (digits.length && typeof digits[0] !== 'number'))
+                throw new Error('alphabet.encode input should be an array of numbers');
+            return digits.map((i) => {
+                assertNumber(i);
+                if (i < 0 || i >= alphabet.length)
+                    throw new Error(`Digit index outside alphabet: ${i} (alphabet: ${alphabet.length})`);
+                return alphabet[i];
+            });
+        },
+        decode: (input) => {
+            if (!Array.isArray(input) || (input.length && typeof input[0] !== 'string'))
+                throw new Error('alphabet.decode input should be array of strings');
+            return input.map((letter) => {
+                if (typeof letter !== 'string')
+                    throw new Error(`alphabet.decode: not string element=${letter}`);
+                const index = alphabet.indexOf(letter);
+                if (index === -1)
+                    throw new Error(`Unknown letter: "${letter}". Allowed: ${alphabet}`);
+                return index;
+            });
+        },
+    };
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function join(separator = '') {
+    if (typeof separator !== 'string')
+        throw new Error('join separator should be string');
+    return {
+        encode: (from) => {
+            if (!Array.isArray(from) || (from.length && typeof from[0] !== 'string'))
+                throw new Error('join.encode input should be array of strings');
+            for (let i of from)
+                if (typeof i !== 'string')
+                    throw new Error(`join.encode: non-string input=${i}`);
+            return from.join(separator);
+        },
+        decode: (to) => {
+            if (typeof to !== 'string')
+                throw new Error('join.decode input should be string');
+            return to.split(separator);
+        },
+    };
+}
+/**
+ * Pad strings array so it has integer number of bits
+ * @__NO_SIDE_EFFECTS__
+ */
+function padding(bits, chr = '=') {
+    assertNumber(bits);
+    if (typeof chr !== 'string')
+        throw new Error('padding chr should be string');
+    return {
+        encode(data) {
+            if (!Array.isArray(data) || (data.length && typeof data[0] !== 'string'))
+                throw new Error('padding.encode input should be array of strings');
+            for (let i of data)
+                if (typeof i !== 'string')
+                    throw new Error(`padding.encode: non-string input=${i}`);
+            while ((data.length * bits) % 8)
+                data.push(chr);
+            return data;
+        },
+        decode(input) {
+            if (!Array.isArray(input) || (input.length && typeof input[0] !== 'string'))
+                throw new Error('padding.encode input should be array of strings');
+            for (let i of input)
+                if (typeof i !== 'string')
+                    throw new Error(`padding.decode: non-string input=${i}`);
+            let end = input.length;
+            if ((end * bits) % 8)
+                throw new Error('Invalid padding: string should have whole number of bytes');
+            for (; end > 0 && input[end - 1] === chr; end--) {
+                if (!(((end - 1) * bits) % 8))
+                    throw new Error('Invalid padding: string has too much padding');
+            }
+            return input.slice(0, end);
+        },
+    };
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function normalize(fn) {
+    if (typeof fn !== 'function')
+        throw new Error('normalize fn should be function');
+    return { encode: (from) => from, decode: (to) => fn(to) };
+}
+/**
+ * Slow: O(n^2) time complexity
+ * @__NO_SIDE_EFFECTS__
+ */
+function convertRadix(data, from, to) {
+    // base 1 is impossible
+    if (from < 2)
+        throw new Error(`convertRadix: wrong from=${from}, base cannot be less than 2`);
+    if (to < 2)
+        throw new Error(`convertRadix: wrong to=${to}, base cannot be less than 2`);
+    if (!Array.isArray(data))
+        throw new Error('convertRadix: data should be array');
+    if (!data.length)
+        return [];
+    let pos = 0;
+    const res = [];
+    const digits = Array.from(data);
+    digits.forEach((d) => {
+        assertNumber(d);
+        if (d < 0 || d >= from)
+            throw new Error(`Wrong integer: ${d}`);
+    });
+    while (true) {
+        let carry = 0;
+        let done = true;
+        for (let i = pos; i < digits.length; i++) {
+            const digit = digits[i];
+            const digitBase = from * carry + digit;
+            if (!Number.isSafeInteger(digitBase) ||
+                (from * carry) / from !== carry ||
+                digitBase - digit !== from * carry) {
+                throw new Error('convertRadix: carry overflow');
+            }
+            carry = digitBase % to;
+            const rounded = Math.floor(digitBase / to);
+            digits[i] = rounded;
+            if (!Number.isSafeInteger(rounded) || rounded * to + carry !== digitBase)
+                throw new Error('convertRadix: carry overflow');
+            if (!done)
+                continue;
+            else if (!rounded)
+                pos = i;
+            else
+                done = false;
+        }
+        res.push(carry);
+        if (done)
+            break;
+    }
+    for (let i = 0; i < data.length - 1 && data[i] === 0; i++)
+        res.push(0);
+    return res.reverse();
+}
+const gcd = /* @__NO_SIDE_EFFECTS__ */ (a, b) => (!b ? a : gcd(b, a % b));
+const radix2carry = /*@__NO_SIDE_EFFECTS__ */ (from, to) => from + (to - gcd(from, to));
+/**
+ * Implemented with numbers, because BigInt is 5x slower
+ * @__NO_SIDE_EFFECTS__
+ */
+function convertRadix2(data, from, to, padding) {
+    if (!Array.isArray(data))
+        throw new Error('convertRadix2: data should be array');
+    if (from <= 0 || from > 32)
+        throw new Error(`convertRadix2: wrong from=${from}`);
+    if (to <= 0 || to > 32)
+        throw new Error(`convertRadix2: wrong to=${to}`);
+    if (radix2carry(from, to) > 32) {
+        throw new Error(`convertRadix2: carry overflow from=${from} to=${to} carryBits=${radix2carry(from, to)}`);
+    }
+    let carry = 0;
+    let pos = 0; // bitwise position in current element
+    const mask = 2 ** to - 1;
+    const res = [];
+    for (const n of data) {
+        assertNumber(n);
+        if (n >= 2 ** from)
+            throw new Error(`convertRadix2: invalid data word=${n} from=${from}`);
+        carry = (carry << from) | n;
+        if (pos + from > 32)
+            throw new Error(`convertRadix2: carry overflow pos=${pos} from=${from}`);
+        pos += from;
+        for (; pos >= to; pos -= to)
+            res.push(((carry >> (pos - to)) & mask) >>> 0);
+        carry &= 2 ** pos - 1; // clean carry, otherwise it will cause overflow
+    }
+    carry = (carry << (to - pos)) & mask;
+    if (!padding && pos >= from)
+        throw new Error('Excess padding');
+    if (!padding && carry)
+        throw new Error(`Non-zero padding: ${carry}`);
+    if (padding && pos > 0)
+        res.push(carry >>> 0);
+    return res;
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function radix(num) {
+    assertNumber(num);
+    return {
+        encode: (bytes) => {
+            if (!(bytes instanceof Uint8Array))
+                throw new Error('radix.encode input should be Uint8Array');
+            return convertRadix(Array.from(bytes), 2 ** 8, num);
+        },
+        decode: (digits) => {
+            if (!Array.isArray(digits) || (digits.length && typeof digits[0] !== 'number'))
+                throw new Error('radix.decode input should be array of strings');
+            return Uint8Array.from(convertRadix(digits, num, 2 ** 8));
+        },
+    };
+}
+/**
+ * If both bases are power of same number (like `2**8 <-> 2**64`),
+ * there is a linear algorithm. For now we have implementation for power-of-two bases only.
+ * @__NO_SIDE_EFFECTS__
+ */
+function radix2(bits, revPadding = false) {
+    assertNumber(bits);
+    if (bits <= 0 || bits > 32)
+        throw new Error('radix2: bits should be in (0..32]');
+    if (radix2carry(8, bits) > 32 || radix2carry(bits, 8) > 32)
+        throw new Error('radix2: carry overflow');
+    return {
+        encode: (bytes) => {
+            if (!(bytes instanceof Uint8Array))
+                throw new Error('radix2.encode input should be Uint8Array');
+            return convertRadix2(Array.from(bytes), 8, bits, !revPadding);
+        },
+        decode: (digits) => {
+            if (!Array.isArray(digits) || (digits.length && typeof digits[0] !== 'number'))
+                throw new Error('radix2.decode input should be array of strings');
+            return Uint8Array.from(convertRadix2(digits, bits, 8, revPadding));
+        },
+    };
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function unsafeWrapper(fn) {
+    if (typeof fn !== 'function')
+        throw new Error('unsafeWrapper fn should be function');
+    return function (...args) {
+        try {
+            return fn.apply(null, args);
+        }
+        catch (e) { }
+    };
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function checksum(len, fn) {
+    assertNumber(len);
+    if (typeof fn !== 'function')
+        throw new Error('checksum fn should be function');
+    return {
+        encode(data) {
+            if (!(data instanceof Uint8Array))
+                throw new Error('checksum.encode: input should be Uint8Array');
+            const checksum = fn(data).slice(0, len);
+            const res = new Uint8Array(data.length + len);
+            res.set(data);
+            res.set(checksum, data.length);
+            return res;
+        },
+        decode(data) {
+            if (!(data instanceof Uint8Array))
+                throw new Error('checksum.decode: input should be Uint8Array');
+            const payload = data.slice(0, -len);
+            const newChecksum = fn(payload).slice(0, len);
+            const oldChecksum = data.slice(-len);
+            for (let i = 0; i < len; i++)
+                if (newChecksum[i] !== oldChecksum[i])
+                    throw new Error('Invalid checksum');
+            return payload;
+        },
+    };
+}
+exports.utils = { alphabet, chain, checksum, radix, radix2, join, padding };
+// RFC 4648 aka RFC 3548
+// ---------------------
+exports.base16 = chain(radix2(4), alphabet('0123456789ABCDEF'), join(''));
+exports.base32 = chain(radix2(5), alphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'), padding(5), join(''));
+exports.base32hex = chain(radix2(5), alphabet('0123456789ABCDEFGHIJKLMNOPQRSTUV'), padding(5), join(''));
+exports.base32crockford = chain(radix2(5), alphabet('0123456789ABCDEFGHJKMNPQRSTVWXYZ'), join(''), normalize((s) => s.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1')));
+exports.base64 = chain(radix2(6), alphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'), padding(6), join(''));
+exports.base64url = chain(radix2(6), alphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'), padding(6), join(''));
+exports.base64urlnopad = chain(radix2(6), alphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'), join(''));
+// base58 code
+// -----------
+const genBase58 = (abc) => chain(radix(58), alphabet(abc), join(''));
+exports.base58 = genBase58('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz');
+exports.base58flickr = genBase58('123456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ');
+exports.base58xrp = genBase58('rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz');
+// xmr ver is done in 8-byte blocks (which equals 11 chars in decoding). Last (non-full) block padded with '1' to size in XMR_BLOCK_LEN.
+// Block encoding significantly reduces quadratic complexity of base58.
+// Data len (index) -> encoded block len
+const XMR_BLOCK_LEN = [0, 2, 3, 5, 6, 7, 9, 10, 11];
+exports.base58xmr = {
+    encode(data) {
+        let res = '';
+        for (let i = 0; i < data.length; i += 8) {
+            const block = data.subarray(i, i + 8);
+            res += exports.base58.encode(block).padStart(XMR_BLOCK_LEN[block.length], '1');
+        }
+        return res;
+    },
+    decode(str) {
+        let res = [];
+        for (let i = 0; i < str.length; i += 11) {
+            const slice = str.slice(i, i + 11);
+            const blockLen = XMR_BLOCK_LEN.indexOf(slice.length);
+            const block = exports.base58.decode(slice);
+            for (let j = 0; j < block.length - blockLen; j++) {
+                if (block[j] !== 0)
+                    throw new Error('base58xmr: wrong padding');
+            }
+            res = res.concat(Array.from(block.slice(block.length - blockLen)));
+        }
+        return Uint8Array.from(res);
+    },
+};
+const base58check = (sha256) => chain(checksum(4, (data) => sha256(sha256(data))), exports.base58);
+exports.base58check = base58check;
+const BECH_ALPHABET = /* @__PURE__ */ chain(alphabet('qpzry9x8gf2tvdw0s3jn54khce6mua7l'), join(''));
+const POLYMOD_GENERATORS = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function bech32Polymod(pre) {
+    const b = pre >> 25;
+    let chk = (pre & 0x1ffffff) << 5;
+    for (let i = 0; i < POLYMOD_GENERATORS.length; i++) {
+        if (((b >> i) & 1) === 1)
+            chk ^= POLYMOD_GENERATORS[i];
+    }
+    return chk;
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function bechChecksum(prefix, words, encodingConst = 1) {
+    const len = prefix.length;
+    let chk = 1;
+    for (let i = 0; i < len; i++) {
+        const c = prefix.charCodeAt(i);
+        if (c < 33 || c > 126)
+            throw new Error(`Invalid prefix (${prefix})`);
+        chk = bech32Polymod(chk) ^ (c >> 5);
+    }
+    chk = bech32Polymod(chk);
+    for (let i = 0; i < len; i++)
+        chk = bech32Polymod(chk) ^ (prefix.charCodeAt(i) & 0x1f);
+    for (let v of words)
+        chk = bech32Polymod(chk) ^ v;
+    for (let i = 0; i < 6; i++)
+        chk = bech32Polymod(chk);
+    chk ^= encodingConst;
+    return BECH_ALPHABET.encode(convertRadix2([chk % 2 ** 30], 30, 5, false));
+}
+/**
+ * @__NO_SIDE_EFFECTS__
+ */
+function genBech32(encoding) {
+    const ENCODING_CONST = encoding === 'bech32' ? 1 : 0x2bc830a3;
+    const _words = radix2(5);
+    const fromWords = _words.decode;
+    const toWords = _words.encode;
+    const fromWordsUnsafe = unsafeWrapper(fromWords);
+    function encode(prefix, words, limit = 90) {
+        if (typeof prefix !== 'string')
+            throw new Error(`bech32.encode prefix should be string, not ${typeof prefix}`);
+        if (!Array.isArray(words) || (words.length && typeof words[0] !== 'number'))
+            throw new Error(`bech32.encode words should be array of numbers, not ${typeof words}`);
+        const actualLength = prefix.length + 7 + words.length;
+        if (limit !== false && actualLength > limit)
+            throw new TypeError(`Length ${actualLength} exceeds limit ${limit}`);
+        const lowered = prefix.toLowerCase();
+        const sum = bechChecksum(lowered, words, ENCODING_CONST);
+        return `${lowered}1${BECH_ALPHABET.encode(words)}${sum}`;
+    }
+    function decode(str, limit = 90) {
+        if (typeof str !== 'string')
+            throw new Error(`bech32.decode input should be string, not ${typeof str}`);
+        if (str.length < 8 || (limit !== false && str.length > limit))
+            throw new TypeError(`Wrong string length: ${str.length} (${str}). Expected (8..${limit})`);
+        // don't allow mixed case
+        const lowered = str.toLowerCase();
+        if (str !== lowered && str !== str.toUpperCase())
+            throw new Error(`String must be lowercase or uppercase`);
+        str = lowered;
+        const sepIndex = str.lastIndexOf('1');
+        if (sepIndex === 0 || sepIndex === -1)
+            throw new Error(`Letter "1" must be present between prefix and data only`);
+        const prefix = str.slice(0, sepIndex);
+        const _words = str.slice(sepIndex + 1);
+        if (_words.length < 6)
+            throw new Error('Data must be at least 6 characters long');
+        const words = BECH_ALPHABET.decode(_words).slice(0, -6);
+        const sum = bechChecksum(prefix, words, ENCODING_CONST);
+        if (!_words.endsWith(sum))
+            throw new Error(`Invalid checksum in ${str}: expected "${sum}"`);
+        return { prefix, words };
+    }
+    const decodeUnsafe = unsafeWrapper(decode);
+    function decodeToBytes(str) {
+        const { prefix, words } = decode(str, false);
+        return { prefix, words, bytes: fromWords(words) };
+    }
+    return { encode, decode, decodeToBytes, decodeUnsafe, fromWords, fromWordsUnsafe, toWords };
+}
+exports.bech32 = genBech32('bech32');
+exports.bech32m = genBech32('bech32m');
+exports.utf8 = {
+    encode: (data) => new TextDecoder().decode(data),
+    decode: (str) => new TextEncoder().encode(str),
+};
+exports.hex = chain(radix2(4), alphabet('0123456789abcdef'), join(''), normalize((s) => {
+    if (typeof s !== 'string' || s.length % 2)
+        throw new TypeError(`hex.decode: expected string, got ${typeof s} with length ${s.length}`);
+    return s.toLowerCase();
+}));
+// prettier-ignore
+const CODERS = {
+    utf8: exports.utf8, hex: exports.hex, base16: exports.base16, base32: exports.base32, base64: exports.base64, base64url: exports.base64url, base58: exports.base58, base58xmr: exports.base58xmr
+};
+const coderTypeError = 'Invalid encoding type. Available types: utf8, hex, base16, base32, base64, base64url, base58, base58xmr';
+const bytesToString = (type, bytes) => {
+    if (typeof type !== 'string' || !CODERS.hasOwnProperty(type))
+        throw new TypeError(coderTypeError);
+    if (!(bytes instanceof Uint8Array))
+        throw new TypeError('bytesToString() expects Uint8Array');
+    return CODERS[type].encode(bytes);
+};
+exports.bytesToString = bytesToString;
+exports.str = exports.bytesToString; // as in python, but for bytes only
+const stringToBytes = (type, str) => {
+    if (!CODERS.hasOwnProperty(type))
+        throw new TypeError(coderTypeError);
+    if (typeof str !== 'string')
+        throw new TypeError('stringToBytes() expects string');
+    return CODERS[type].decode(str);
+};
+exports.stringToBytes = stringToBytes;
+exports.bytes = exports.stringToBytes;
+
+},{}],86:[function(require,module,exports){
 (function (global){(function (){
 'use strict';
 
@@ -809,7 +5725,7 @@ module.exports = function availableTypedArrays() {
 };
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],16:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -961,14 +5877,14 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],17:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 module.exports = function isBuffer(arg) {
   return arg && typeof arg === 'object'
     && typeof arg.copy === 'function'
     && typeof arg.fill === 'function'
     && typeof arg.readUInt8 === 'function';
 }
-},{}],18:[function(require,module,exports){
+},{}],89:[function(require,module,exports){
 // Currently in sync with Node.js lib/internal/util/types.js
 // https://github.com/nodejs/node/commit/112cc7c27551254aa2b17098fb774867f05ed0d9
 
@@ -1304,7 +6220,7 @@ exports.isAnyArrayBuffer = isAnyArrayBuffer;
   });
 });
 
-},{"is-arguments":38,"is-generator-function":40,"is-typed-array":41,"which-typed-array":94}],19:[function(require,module,exports){
+},{"is-arguments":111,"is-generator-function":113,"is-typed-array":114,"which-typed-array":173}],90:[function(require,module,exports){
 (function (process){(function (){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2023,7 +6939,7 @@ function callbackify(original) {
 exports.callbackify = callbackify;
 
 }).call(this)}).call(this,require('_process'))
-},{"./support/isBuffer":17,"./support/types":18,"_process":42,"inherits":37}],20:[function(require,module,exports){
+},{"./support/isBuffer":88,"./support/types":89,"_process":120,"inherits":110}],91:[function(require,module,exports){
 (function (Buffer){(function (){
 /*!
  * The buffer module from node.js, for the browser.
@@ -3804,7 +8720,7 @@ function numberIsNaN (obj) {
 }
 
 }).call(this)}).call(this,require("buffer").Buffer)
-},{"base64-js":16,"buffer":20,"ieee754":36}],21:[function(require,module,exports){
+},{"base64-js":87,"buffer":91,"ieee754":109}],92:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -3821,7 +8737,7 @@ module.exports = function callBoundIntrinsic(name, allowMissing) {
 	return intrinsic;
 };
 
-},{"./":22,"get-intrinsic":26}],22:[function(require,module,exports){
+},{"./":93,"get-intrinsic":99}],93:[function(require,module,exports){
 'use strict';
 
 var bind = require('function-bind');
@@ -3870,7 +8786,556 @@ if ($defineProperty) {
 	module.exports.apply = applyBind;
 }
 
-},{"function-bind":25,"get-intrinsic":26}],23:[function(require,module,exports){
+},{"function-bind":98,"get-intrinsic":99}],94:[function(require,module,exports){
+(function (process){(function (){
+/* eslint-env browser */
+
+/**
+ * This is the web browser implementation of `debug()`.
+ */
+
+exports.formatArgs = formatArgs;
+exports.save = save;
+exports.load = load;
+exports.useColors = useColors;
+exports.storage = localstorage();
+exports.destroy = (() => {
+	let warned = false;
+
+	return () => {
+		if (!warned) {
+			warned = true;
+			console.warn('Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.');
+		}
+	};
+})();
+
+/**
+ * Colors.
+ */
+
+exports.colors = [
+	'#0000CC',
+	'#0000FF',
+	'#0033CC',
+	'#0033FF',
+	'#0066CC',
+	'#0066FF',
+	'#0099CC',
+	'#0099FF',
+	'#00CC00',
+	'#00CC33',
+	'#00CC66',
+	'#00CC99',
+	'#00CCCC',
+	'#00CCFF',
+	'#3300CC',
+	'#3300FF',
+	'#3333CC',
+	'#3333FF',
+	'#3366CC',
+	'#3366FF',
+	'#3399CC',
+	'#3399FF',
+	'#33CC00',
+	'#33CC33',
+	'#33CC66',
+	'#33CC99',
+	'#33CCCC',
+	'#33CCFF',
+	'#6600CC',
+	'#6600FF',
+	'#6633CC',
+	'#6633FF',
+	'#66CC00',
+	'#66CC33',
+	'#9900CC',
+	'#9900FF',
+	'#9933CC',
+	'#9933FF',
+	'#99CC00',
+	'#99CC33',
+	'#CC0000',
+	'#CC0033',
+	'#CC0066',
+	'#CC0099',
+	'#CC00CC',
+	'#CC00FF',
+	'#CC3300',
+	'#CC3333',
+	'#CC3366',
+	'#CC3399',
+	'#CC33CC',
+	'#CC33FF',
+	'#CC6600',
+	'#CC6633',
+	'#CC9900',
+	'#CC9933',
+	'#CCCC00',
+	'#CCCC33',
+	'#FF0000',
+	'#FF0033',
+	'#FF0066',
+	'#FF0099',
+	'#FF00CC',
+	'#FF00FF',
+	'#FF3300',
+	'#FF3333',
+	'#FF3366',
+	'#FF3399',
+	'#FF33CC',
+	'#FF33FF',
+	'#FF6600',
+	'#FF6633',
+	'#FF9900',
+	'#FF9933',
+	'#FFCC00',
+	'#FFCC33'
+];
+
+/**
+ * Currently only WebKit-based Web Inspectors, Firefox >= v31,
+ * and the Firebug extension (any Firefox version) are known
+ * to support "%c" CSS customizations.
+ *
+ * TODO: add a `localStorage` variable to explicitly enable/disable colors
+ */
+
+// eslint-disable-next-line complexity
+function useColors() {
+	// NB: In an Electron preload script, document will be defined but not fully
+	// initialized. Since we know we're in Chrome, we'll just detect this case
+	// explicitly
+	if (typeof window !== 'undefined' && window.process && (window.process.type === 'renderer' || window.process.__nwjs)) {
+		return true;
+	}
+
+	// Internet Explorer and Edge do not support colors.
+	if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/)) {
+		return false;
+	}
+
+	// Is webkit? http://stackoverflow.com/a/16459606/376773
+	// document is undefined in react-native: https://github.com/facebook/react-native/pull/1632
+	return (typeof document !== 'undefined' && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance) ||
+		// Is firebug? http://stackoverflow.com/a/398120/376773
+		(typeof window !== 'undefined' && window.console && (window.console.firebug || (window.console.exception && window.console.table))) ||
+		// Is firefox >= v31?
+		// https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+		(typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31) ||
+		// Double check webkit in userAgent just in case we are in a worker
+		(typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/));
+}
+
+/**
+ * Colorize log arguments if enabled.
+ *
+ * @api public
+ */
+
+function formatArgs(args) {
+	args[0] = (this.useColors ? '%c' : '') +
+		this.namespace +
+		(this.useColors ? ' %c' : ' ') +
+		args[0] +
+		(this.useColors ? '%c ' : ' ') +
+		'+' + module.exports.humanize(this.diff);
+
+	if (!this.useColors) {
+		return;
+	}
+
+	const c = 'color: ' + this.color;
+	args.splice(1, 0, c, 'color: inherit');
+
+	// The final "%c" is somewhat tricky, because there could be other
+	// arguments passed either before or after the %c, so we need to
+	// figure out the correct index to insert the CSS into
+	let index = 0;
+	let lastC = 0;
+	args[0].replace(/%[a-zA-Z%]/g, match => {
+		if (match === '%%') {
+			return;
+		}
+		index++;
+		if (match === '%c') {
+			// We only are interested in the *last* %c
+			// (the user may have provided their own)
+			lastC = index;
+		}
+	});
+
+	args.splice(lastC, 0, c);
+}
+
+/**
+ * Invokes `console.debug()` when available.
+ * No-op when `console.debug` is not a "function".
+ * If `console.debug` is not available, falls back
+ * to `console.log`.
+ *
+ * @api public
+ */
+exports.log = console.debug || console.log || (() => {});
+
+/**
+ * Save `namespaces`.
+ *
+ * @param {String} namespaces
+ * @api private
+ */
+function save(namespaces) {
+	try {
+		if (namespaces) {
+			exports.storage.setItem('debug', namespaces);
+		} else {
+			exports.storage.removeItem('debug');
+		}
+	} catch (error) {
+		// Swallow
+		// XXX (@Qix-) should we be logging these?
+	}
+}
+
+/**
+ * Load `namespaces`.
+ *
+ * @return {String} returns the previously persisted debug modes
+ * @api private
+ */
+function load() {
+	let r;
+	try {
+		r = exports.storage.getItem('debug');
+	} catch (error) {
+		// Swallow
+		// XXX (@Qix-) should we be logging these?
+	}
+
+	// If debug isn't set in LS, and we're in Electron, try to load $DEBUG
+	if (!r && typeof process !== 'undefined' && 'env' in process) {
+		r = process.env.DEBUG;
+	}
+
+	return r;
+}
+
+/**
+ * Localstorage attempts to return the localstorage.
+ *
+ * This is necessary because safari throws
+ * when a user disables cookies/localstorage
+ * and you attempt to access it.
+ *
+ * @return {LocalStorage}
+ * @api private
+ */
+
+function localstorage() {
+	try {
+		// TVMLKit (Apple TV JS Runtime) does not have a window object, just localStorage in the global context
+		// The Browser also has localStorage in the global context.
+		return localStorage;
+	} catch (error) {
+		// Swallow
+		// XXX (@Qix-) should we be logging these?
+	}
+}
+
+module.exports = require('./common')(exports);
+
+const {formatters} = module.exports;
+
+/**
+ * Map %j to `JSON.stringify()`, since no Web Inspectors do that by default.
+ */
+
+formatters.j = function (v) {
+	try {
+		return JSON.stringify(v);
+	} catch (error) {
+		return '[UnexpectedJSONParseError]: ' + error.message;
+	}
+};
+
+}).call(this)}).call(this,require('_process'))
+},{"./common":95,"_process":120}],95:[function(require,module,exports){
+
+/**
+ * This is the common logic for both the Node.js and web browser
+ * implementations of `debug()`.
+ */
+
+function setup(env) {
+	createDebug.debug = createDebug;
+	createDebug.default = createDebug;
+	createDebug.coerce = coerce;
+	createDebug.disable = disable;
+	createDebug.enable = enable;
+	createDebug.enabled = enabled;
+	createDebug.humanize = require('ms');
+	createDebug.destroy = destroy;
+
+	Object.keys(env).forEach(key => {
+		createDebug[key] = env[key];
+	});
+
+	/**
+	* The currently active debug mode names, and names to skip.
+	*/
+
+	createDebug.names = [];
+	createDebug.skips = [];
+
+	/**
+	* Map of special "%n" handling functions, for the debug "format" argument.
+	*
+	* Valid key names are a single, lower or upper-case letter, i.e. "n" and "N".
+	*/
+	createDebug.formatters = {};
+
+	/**
+	* Selects a color for a debug namespace
+	* @param {String} namespace The namespace string for the debug instance to be colored
+	* @return {Number|String} An ANSI color code for the given namespace
+	* @api private
+	*/
+	function selectColor(namespace) {
+		let hash = 0;
+
+		for (let i = 0; i < namespace.length; i++) {
+			hash = ((hash << 5) - hash) + namespace.charCodeAt(i);
+			hash |= 0; // Convert to 32bit integer
+		}
+
+		return createDebug.colors[Math.abs(hash) % createDebug.colors.length];
+	}
+	createDebug.selectColor = selectColor;
+
+	/**
+	* Create a debugger with the given `namespace`.
+	*
+	* @param {String} namespace
+	* @return {Function}
+	* @api public
+	*/
+	function createDebug(namespace) {
+		let prevTime;
+		let enableOverride = null;
+		let namespacesCache;
+		let enabledCache;
+
+		function debug(...args) {
+			// Disabled?
+			if (!debug.enabled) {
+				return;
+			}
+
+			const self = debug;
+
+			// Set `diff` timestamp
+			const curr = Number(new Date());
+			const ms = curr - (prevTime || curr);
+			self.diff = ms;
+			self.prev = prevTime;
+			self.curr = curr;
+			prevTime = curr;
+
+			args[0] = createDebug.coerce(args[0]);
+
+			if (typeof args[0] !== 'string') {
+				// Anything else let's inspect with %O
+				args.unshift('%O');
+			}
+
+			// Apply any `formatters` transformations
+			let index = 0;
+			args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
+				// If we encounter an escaped % then don't increase the array index
+				if (match === '%%') {
+					return '%';
+				}
+				index++;
+				const formatter = createDebug.formatters[format];
+				if (typeof formatter === 'function') {
+					const val = args[index];
+					match = formatter.call(self, val);
+
+					// Now we need to remove `args[index]` since it's inlined in the `format`
+					args.splice(index, 1);
+					index--;
+				}
+				return match;
+			});
+
+			// Apply env-specific formatting (colors, etc.)
+			createDebug.formatArgs.call(self, args);
+
+			const logFn = self.log || createDebug.log;
+			logFn.apply(self, args);
+		}
+
+		debug.namespace = namespace;
+		debug.useColors = createDebug.useColors();
+		debug.color = createDebug.selectColor(namespace);
+		debug.extend = extend;
+		debug.destroy = createDebug.destroy; // XXX Temporary. Will be removed in the next major release.
+
+		Object.defineProperty(debug, 'enabled', {
+			enumerable: true,
+			configurable: false,
+			get: () => {
+				if (enableOverride !== null) {
+					return enableOverride;
+				}
+				if (namespacesCache !== createDebug.namespaces) {
+					namespacesCache = createDebug.namespaces;
+					enabledCache = createDebug.enabled(namespace);
+				}
+
+				return enabledCache;
+			},
+			set: v => {
+				enableOverride = v;
+			}
+		});
+
+		// Env-specific initialization logic for debug instances
+		if (typeof createDebug.init === 'function') {
+			createDebug.init(debug);
+		}
+
+		return debug;
+	}
+
+	function extend(namespace, delimiter) {
+		const newDebug = createDebug(this.namespace + (typeof delimiter === 'undefined' ? ':' : delimiter) + namespace);
+		newDebug.log = this.log;
+		return newDebug;
+	}
+
+	/**
+	* Enables a debug mode by namespaces. This can include modes
+	* separated by a colon and wildcards.
+	*
+	* @param {String} namespaces
+	* @api public
+	*/
+	function enable(namespaces) {
+		createDebug.save(namespaces);
+		createDebug.namespaces = namespaces;
+
+		createDebug.names = [];
+		createDebug.skips = [];
+
+		let i;
+		const split = (typeof namespaces === 'string' ? namespaces : '').split(/[\s,]+/);
+		const len = split.length;
+
+		for (i = 0; i < len; i++) {
+			if (!split[i]) {
+				// ignore empty strings
+				continue;
+			}
+
+			namespaces = split[i].replace(/\*/g, '.*?');
+
+			if (namespaces[0] === '-') {
+				createDebug.skips.push(new RegExp('^' + namespaces.slice(1) + '$'));
+			} else {
+				createDebug.names.push(new RegExp('^' + namespaces + '$'));
+			}
+		}
+	}
+
+	/**
+	* Disable debug output.
+	*
+	* @return {String} namespaces
+	* @api public
+	*/
+	function disable() {
+		const namespaces = [
+			...createDebug.names.map(toNamespace),
+			...createDebug.skips.map(toNamespace).map(namespace => '-' + namespace)
+		].join(',');
+		createDebug.enable('');
+		return namespaces;
+	}
+
+	/**
+	* Returns true if the given mode name is enabled, false otherwise.
+	*
+	* @param {String} name
+	* @return {Boolean}
+	* @api public
+	*/
+	function enabled(name) {
+		if (name[name.length - 1] === '*') {
+			return true;
+		}
+
+		let i;
+		let len;
+
+		for (i = 0, len = createDebug.skips.length; i < len; i++) {
+			if (createDebug.skips[i].test(name)) {
+				return false;
+			}
+		}
+
+		for (i = 0, len = createDebug.names.length; i < len; i++) {
+			if (createDebug.names[i].test(name)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	* Convert regexp to namespace
+	*
+	* @param {RegExp} regxep
+	* @return {String} namespace
+	* @api private
+	*/
+	function toNamespace(regexp) {
+		return regexp.toString()
+			.substring(2, regexp.toString().length - 2)
+			.replace(/\.\*\?$/, '*');
+	}
+
+	/**
+	* Coerce `val`.
+	*
+	* @param {Mixed} val
+	* @return {Mixed}
+	* @api private
+	*/
+	function coerce(val) {
+		if (val instanceof Error) {
+			return val.stack || val.message;
+		}
+		return val;
+	}
+
+	/**
+	* XXX DO NOT USE. This is a temporary stub function.
+	* XXX It WILL be removed in the next major release.
+	*/
+	function destroy() {
+		console.warn('Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.');
+	}
+
+	createDebug.enable(createDebug.load());
+
+	return createDebug;
+}
+
+module.exports = setup;
+
+},{"ms":116}],96:[function(require,module,exports){
 'use strict';
 
 var isCallable = require('is-callable');
@@ -3934,7 +9399,7 @@ var forEach = function forEach(list, iterator, thisArg) {
 
 module.exports = forEach;
 
-},{"is-callable":39}],24:[function(require,module,exports){
+},{"is-callable":112}],97:[function(require,module,exports){
 'use strict';
 
 /* eslint no-invalid-this: 1 */
@@ -3988,14 +9453,14 @@ module.exports = function bind(that) {
     return bound;
 };
 
-},{}],25:[function(require,module,exports){
+},{}],98:[function(require,module,exports){
 'use strict';
 
 var implementation = require('./implementation');
 
 module.exports = Function.prototype.bind || implementation;
 
-},{"./implementation":24}],26:[function(require,module,exports){
+},{"./implementation":97}],99:[function(require,module,exports){
 'use strict';
 
 var undefined;
@@ -4341,7 +9806,7 @@ module.exports = function GetIntrinsic(name, allowMissing) {
 	return value;
 };
 
-},{"function-bind":25,"has":31,"has-symbols":28}],27:[function(require,module,exports){
+},{"function-bind":98,"has":104,"has-symbols":101}],100:[function(require,module,exports){
 'use strict';
 
 var GetIntrinsic = require('get-intrinsic');
@@ -4359,7 +9824,7 @@ if ($gOPD) {
 
 module.exports = $gOPD;
 
-},{"get-intrinsic":26}],28:[function(require,module,exports){
+},{"get-intrinsic":99}],101:[function(require,module,exports){
 'use strict';
 
 var origSymbol = typeof Symbol !== 'undefined' && Symbol;
@@ -4374,7 +9839,7 @@ module.exports = function hasNativeSymbols() {
 	return hasSymbolSham();
 };
 
-},{"./shams":29}],29:[function(require,module,exports){
+},{"./shams":102}],102:[function(require,module,exports){
 'use strict';
 
 /* eslint complexity: [2, 18], max-statements: [2, 33] */
@@ -4418,7 +9883,7 @@ module.exports = function hasSymbols() {
 	return true;
 };
 
-},{}],30:[function(require,module,exports){
+},{}],103:[function(require,module,exports){
 'use strict';
 
 var hasSymbols = require('has-symbols/shams');
@@ -4427,14 +9892,14 @@ module.exports = function hasToStringTagShams() {
 	return hasSymbols() && !!Symbol.toStringTag;
 };
 
-},{"has-symbols/shams":29}],31:[function(require,module,exports){
+},{"has-symbols/shams":102}],104:[function(require,module,exports){
 'use strict';
 
 var bind = require('function-bind');
 
 module.exports = bind.call(Function.call, Object.prototype.hasOwnProperty);
 
-},{"function-bind":25}],32:[function(require,module,exports){
+},{"function-bind":98}],105:[function(require,module,exports){
 'use strict';
 
 var reactIs = require('react-is');
@@ -4539,7 +10004,7 @@ function hoistNonReactStatics(targetComponent, sourceComponent, blacklist) {
 
 module.exports = hoistNonReactStatics;
 
-},{"react-is":35}],33:[function(require,module,exports){
+},{"react-is":108}],106:[function(require,module,exports){
 (function (process){(function (){
 /** @license React v16.13.1
  * react-is.development.js
@@ -4724,7 +10189,7 @@ exports.typeOf = typeOf;
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":42}],34:[function(require,module,exports){
+},{"_process":120}],107:[function(require,module,exports){
 /** @license React v16.13.1
  * react-is.production.min.js
  *
@@ -4741,7 +10206,7 @@ exports.Profiler=g;exports.StrictMode=f;exports.Suspense=p;exports.isAsyncMode=f
 exports.isMemo=function(a){return z(a)===r};exports.isPortal=function(a){return z(a)===d};exports.isProfiler=function(a){return z(a)===g};exports.isStrictMode=function(a){return z(a)===f};exports.isSuspense=function(a){return z(a)===p};
 exports.isValidElementType=function(a){return"string"===typeof a||"function"===typeof a||a===e||a===m||a===g||a===f||a===p||a===q||"object"===typeof a&&null!==a&&(a.$$typeof===t||a.$$typeof===r||a.$$typeof===h||a.$$typeof===k||a.$$typeof===n||a.$$typeof===w||a.$$typeof===x||a.$$typeof===y||a.$$typeof===v)};exports.typeOf=z;
 
-},{}],35:[function(require,module,exports){
+},{}],108:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -4752,7 +10217,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"./cjs/react-is.development.js":33,"./cjs/react-is.production.min.js":34,"_process":42}],36:[function(require,module,exports){
+},{"./cjs/react-is.development.js":106,"./cjs/react-is.production.min.js":107,"_process":120}],109:[function(require,module,exports){
 /*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
@@ -4839,7 +10304,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],37:[function(require,module,exports){
+},{}],110:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -4868,7 +10333,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],38:[function(require,module,exports){
+},{}],111:[function(require,module,exports){
 'use strict';
 
 var hasToStringTag = require('has-tostringtag/shams')();
@@ -4903,7 +10368,7 @@ isStandardArguments.isLegacyArguments = isLegacyArguments; // for tests
 
 module.exports = supportsStandardArguments ? isStandardArguments : isLegacyArguments;
 
-},{"call-bind/callBound":21,"has-tostringtag/shams":30}],39:[function(require,module,exports){
+},{"call-bind/callBound":92,"has-tostringtag/shams":103}],112:[function(require,module,exports){
 'use strict';
 
 var fnToStr = Function.prototype.toString;
@@ -5006,7 +10471,7 @@ module.exports = reflectApply
 		return tryFunctionObject(value);
 	};
 
-},{}],40:[function(require,module,exports){
+},{}],113:[function(require,module,exports){
 'use strict';
 
 var toStr = Object.prototype.toString;
@@ -5046,7 +10511,7 @@ module.exports = function isGeneratorFunction(fn) {
 	return getProto(fn) === GeneratorFunction;
 };
 
-},{"has-tostringtag/shams":30}],41:[function(require,module,exports){
+},{"has-tostringtag/shams":103}],114:[function(require,module,exports){
 (function (global){(function (){
 'use strict';
 
@@ -5110,7 +10575,699 @@ module.exports = function isTypedArray(value) {
 };
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"available-typed-arrays":15,"call-bind/callBound":21,"for-each":23,"gopd":27,"has-tostringtag/shams":30}],42:[function(require,module,exports){
+},{"available-typed-arrays":86,"call-bind/callBound":92,"for-each":96,"gopd":100,"has-tostringtag/shams":103}],115:[function(require,module,exports){
+'use strict'
+
+// A linked list to keep track of recently-used-ness
+const Yallist = require('yallist')
+
+const MAX = Symbol('max')
+const LENGTH = Symbol('length')
+const LENGTH_CALCULATOR = Symbol('lengthCalculator')
+const ALLOW_STALE = Symbol('allowStale')
+const MAX_AGE = Symbol('maxAge')
+const DISPOSE = Symbol('dispose')
+const NO_DISPOSE_ON_SET = Symbol('noDisposeOnSet')
+const LRU_LIST = Symbol('lruList')
+const CACHE = Symbol('cache')
+const UPDATE_AGE_ON_GET = Symbol('updateAgeOnGet')
+
+const naiveLength = () => 1
+
+// lruList is a yallist where the head is the youngest
+// item, and the tail is the oldest.  the list contains the Hit
+// objects as the entries.
+// Each Hit object has a reference to its Yallist.Node.  This
+// never changes.
+//
+// cache is a Map (or PseudoMap) that matches the keys to
+// the Yallist.Node object.
+class LRUCache {
+  constructor (options) {
+    if (typeof options === 'number')
+      options = { max: options }
+
+    if (!options)
+      options = {}
+
+    if (options.max && (typeof options.max !== 'number' || options.max < 0))
+      throw new TypeError('max must be a non-negative number')
+    // Kind of weird to have a default max of Infinity, but oh well.
+    const max = this[MAX] = options.max || Infinity
+
+    const lc = options.length || naiveLength
+    this[LENGTH_CALCULATOR] = (typeof lc !== 'function') ? naiveLength : lc
+    this[ALLOW_STALE] = options.stale || false
+    if (options.maxAge && typeof options.maxAge !== 'number')
+      throw new TypeError('maxAge must be a number')
+    this[MAX_AGE] = options.maxAge || 0
+    this[DISPOSE] = options.dispose
+    this[NO_DISPOSE_ON_SET] = options.noDisposeOnSet || false
+    this[UPDATE_AGE_ON_GET] = options.updateAgeOnGet || false
+    this.reset()
+  }
+
+  // resize the cache when the max changes.
+  set max (mL) {
+    if (typeof mL !== 'number' || mL < 0)
+      throw new TypeError('max must be a non-negative number')
+
+    this[MAX] = mL || Infinity
+    trim(this)
+  }
+  get max () {
+    return this[MAX]
+  }
+
+  set allowStale (allowStale) {
+    this[ALLOW_STALE] = !!allowStale
+  }
+  get allowStale () {
+    return this[ALLOW_STALE]
+  }
+
+  set maxAge (mA) {
+    if (typeof mA !== 'number')
+      throw new TypeError('maxAge must be a non-negative number')
+
+    this[MAX_AGE] = mA
+    trim(this)
+  }
+  get maxAge () {
+    return this[MAX_AGE]
+  }
+
+  // resize the cache when the lengthCalculator changes.
+  set lengthCalculator (lC) {
+    if (typeof lC !== 'function')
+      lC = naiveLength
+
+    if (lC !== this[LENGTH_CALCULATOR]) {
+      this[LENGTH_CALCULATOR] = lC
+      this[LENGTH] = 0
+      this[LRU_LIST].forEach(hit => {
+        hit.length = this[LENGTH_CALCULATOR](hit.value, hit.key)
+        this[LENGTH] += hit.length
+      })
+    }
+    trim(this)
+  }
+  get lengthCalculator () { return this[LENGTH_CALCULATOR] }
+
+  get length () { return this[LENGTH] }
+  get itemCount () { return this[LRU_LIST].length }
+
+  rforEach (fn, thisp) {
+    thisp = thisp || this
+    for (let walker = this[LRU_LIST].tail; walker !== null;) {
+      const prev = walker.prev
+      forEachStep(this, fn, walker, thisp)
+      walker = prev
+    }
+  }
+
+  forEach (fn, thisp) {
+    thisp = thisp || this
+    for (let walker = this[LRU_LIST].head; walker !== null;) {
+      const next = walker.next
+      forEachStep(this, fn, walker, thisp)
+      walker = next
+    }
+  }
+
+  keys () {
+    return this[LRU_LIST].toArray().map(k => k.key)
+  }
+
+  values () {
+    return this[LRU_LIST].toArray().map(k => k.value)
+  }
+
+  reset () {
+    if (this[DISPOSE] &&
+        this[LRU_LIST] &&
+        this[LRU_LIST].length) {
+      this[LRU_LIST].forEach(hit => this[DISPOSE](hit.key, hit.value))
+    }
+
+    this[CACHE] = new Map() // hash of items by key
+    this[LRU_LIST] = new Yallist() // list of items in order of use recency
+    this[LENGTH] = 0 // length of items in the list
+  }
+
+  dump () {
+    return this[LRU_LIST].map(hit =>
+      isStale(this, hit) ? false : {
+        k: hit.key,
+        v: hit.value,
+        e: hit.now + (hit.maxAge || 0)
+      }).toArray().filter(h => h)
+  }
+
+  dumpLru () {
+    return this[LRU_LIST]
+  }
+
+  set (key, value, maxAge) {
+    maxAge = maxAge || this[MAX_AGE]
+
+    if (maxAge && typeof maxAge !== 'number')
+      throw new TypeError('maxAge must be a number')
+
+    const now = maxAge ? Date.now() : 0
+    const len = this[LENGTH_CALCULATOR](value, key)
+
+    if (this[CACHE].has(key)) {
+      if (len > this[MAX]) {
+        del(this, this[CACHE].get(key))
+        return false
+      }
+
+      const node = this[CACHE].get(key)
+      const item = node.value
+
+      // dispose of the old one before overwriting
+      // split out into 2 ifs for better coverage tracking
+      if (this[DISPOSE]) {
+        if (!this[NO_DISPOSE_ON_SET])
+          this[DISPOSE](key, item.value)
+      }
+
+      item.now = now
+      item.maxAge = maxAge
+      item.value = value
+      this[LENGTH] += len - item.length
+      item.length = len
+      this.get(key)
+      trim(this)
+      return true
+    }
+
+    const hit = new Entry(key, value, len, now, maxAge)
+
+    // oversized objects fall out of cache automatically.
+    if (hit.length > this[MAX]) {
+      if (this[DISPOSE])
+        this[DISPOSE](key, value)
+
+      return false
+    }
+
+    this[LENGTH] += hit.length
+    this[LRU_LIST].unshift(hit)
+    this[CACHE].set(key, this[LRU_LIST].head)
+    trim(this)
+    return true
+  }
+
+  has (key) {
+    if (!this[CACHE].has(key)) return false
+    const hit = this[CACHE].get(key).value
+    return !isStale(this, hit)
+  }
+
+  get (key) {
+    return get(this, key, true)
+  }
+
+  peek (key) {
+    return get(this, key, false)
+  }
+
+  pop () {
+    const node = this[LRU_LIST].tail
+    if (!node)
+      return null
+
+    del(this, node)
+    return node.value
+  }
+
+  del (key) {
+    del(this, this[CACHE].get(key))
+  }
+
+  load (arr) {
+    // reset the cache
+    this.reset()
+
+    const now = Date.now()
+    // A previous serialized cache has the most recent items first
+    for (let l = arr.length - 1; l >= 0; l--) {
+      const hit = arr[l]
+      const expiresAt = hit.e || 0
+      if (expiresAt === 0)
+        // the item was created without expiration in a non aged cache
+        this.set(hit.k, hit.v)
+      else {
+        const maxAge = expiresAt - now
+        // dont add already expired items
+        if (maxAge > 0) {
+          this.set(hit.k, hit.v, maxAge)
+        }
+      }
+    }
+  }
+
+  prune () {
+    this[CACHE].forEach((value, key) => get(this, key, false))
+  }
+}
+
+const get = (self, key, doUse) => {
+  const node = self[CACHE].get(key)
+  if (node) {
+    const hit = node.value
+    if (isStale(self, hit)) {
+      del(self, node)
+      if (!self[ALLOW_STALE])
+        return undefined
+    } else {
+      if (doUse) {
+        if (self[UPDATE_AGE_ON_GET])
+          node.value.now = Date.now()
+        self[LRU_LIST].unshiftNode(node)
+      }
+    }
+    return hit.value
+  }
+}
+
+const isStale = (self, hit) => {
+  if (!hit || (!hit.maxAge && !self[MAX_AGE]))
+    return false
+
+  const diff = Date.now() - hit.now
+  return hit.maxAge ? diff > hit.maxAge
+    : self[MAX_AGE] && (diff > self[MAX_AGE])
+}
+
+const trim = self => {
+  if (self[LENGTH] > self[MAX]) {
+    for (let walker = self[LRU_LIST].tail;
+      self[LENGTH] > self[MAX] && walker !== null;) {
+      // We know that we're about to delete this one, and also
+      // what the next least recently used key will be, so just
+      // go ahead and set it now.
+      const prev = walker.prev
+      del(self, walker)
+      walker = prev
+    }
+  }
+}
+
+const del = (self, node) => {
+  if (node) {
+    const hit = node.value
+    if (self[DISPOSE])
+      self[DISPOSE](hit.key, hit.value)
+
+    self[LENGTH] -= hit.length
+    self[CACHE].delete(hit.key)
+    self[LRU_LIST].removeNode(node)
+  }
+}
+
+class Entry {
+  constructor (key, value, length, now, maxAge) {
+    this.key = key
+    this.value = value
+    this.length = length
+    this.now = now
+    this.maxAge = maxAge || 0
+  }
+}
+
+const forEachStep = (self, fn, node, thisp) => {
+  let hit = node.value
+  if (isStale(self, hit)) {
+    del(self, node)
+    if (!self[ALLOW_STALE])
+      hit = undefined
+  }
+  if (hit)
+    fn.call(thisp, hit.value, hit.key, self)
+}
+
+module.exports = LRUCache
+
+},{"yallist":176}],116:[function(require,module,exports){
+/**
+ * Helpers.
+ */
+
+var s = 1000;
+var m = s * 60;
+var h = m * 60;
+var d = h * 24;
+var w = d * 7;
+var y = d * 365.25;
+
+/**
+ * Parse or format the given `val`.
+ *
+ * Options:
+ *
+ *  - `long` verbose formatting [false]
+ *
+ * @param {String|Number} val
+ * @param {Object} [options]
+ * @throws {Error} throw an error if val is not a non-empty string or a number
+ * @return {String|Number}
+ * @api public
+ */
+
+module.exports = function(val, options) {
+  options = options || {};
+  var type = typeof val;
+  if (type === 'string' && val.length > 0) {
+    return parse(val);
+  } else if (type === 'number' && isFinite(val)) {
+    return options.long ? fmtLong(val) : fmtShort(val);
+  }
+  throw new Error(
+    'val is not a non-empty string or a valid number. val=' +
+      JSON.stringify(val)
+  );
+};
+
+/**
+ * Parse the given `str` and return milliseconds.
+ *
+ * @param {String} str
+ * @return {Number}
+ * @api private
+ */
+
+function parse(str) {
+  str = String(str);
+  if (str.length > 100) {
+    return;
+  }
+  var match = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(
+    str
+  );
+  if (!match) {
+    return;
+  }
+  var n = parseFloat(match[1]);
+  var type = (match[2] || 'ms').toLowerCase();
+  switch (type) {
+    case 'years':
+    case 'year':
+    case 'yrs':
+    case 'yr':
+    case 'y':
+      return n * y;
+    case 'weeks':
+    case 'week':
+    case 'w':
+      return n * w;
+    case 'days':
+    case 'day':
+    case 'd':
+      return n * d;
+    case 'hours':
+    case 'hour':
+    case 'hrs':
+    case 'hr':
+    case 'h':
+      return n * h;
+    case 'minutes':
+    case 'minute':
+    case 'mins':
+    case 'min':
+    case 'm':
+      return n * m;
+    case 'seconds':
+    case 'second':
+    case 'secs':
+    case 'sec':
+    case 's':
+      return n * s;
+    case 'milliseconds':
+    case 'millisecond':
+    case 'msecs':
+    case 'msec':
+    case 'ms':
+      return n;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Short format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function fmtShort(ms) {
+  var msAbs = Math.abs(ms);
+  if (msAbs >= d) {
+    return Math.round(ms / d) + 'd';
+  }
+  if (msAbs >= h) {
+    return Math.round(ms / h) + 'h';
+  }
+  if (msAbs >= m) {
+    return Math.round(ms / m) + 'm';
+  }
+  if (msAbs >= s) {
+    return Math.round(ms / s) + 's';
+  }
+  return ms + 'ms';
+}
+
+/**
+ * Long format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function fmtLong(ms) {
+  var msAbs = Math.abs(ms);
+  if (msAbs >= d) {
+    return plural(ms, msAbs, d, 'day');
+  }
+  if (msAbs >= h) {
+    return plural(ms, msAbs, h, 'hour');
+  }
+  if (msAbs >= m) {
+    return plural(ms, msAbs, m, 'minute');
+  }
+  if (msAbs >= s) {
+    return plural(ms, msAbs, s, 'second');
+  }
+  return ms + ' ms';
+}
+
+/**
+ * Pluralization helper.
+ */
+
+function plural(ms, msAbs, n, name) {
+  var isPlural = msAbs >= n * 1.5;
+  return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
+}
+
+},{}],117:[function(require,module,exports){
+'use strict';
+
+const { ErrorWithCause } = require('./lib/error-with-cause'); // linemod-replace-with: export { ErrorWithCause } from './lib/error-with-cause.mjs';
+
+const { // linemod-replace-with: export {
+  findCauseByReference,
+  getErrorCause,
+  messageWithCauses,
+  stackWithCauses,
+} = require('./lib/helpers'); // linemod-replace-with: } from './lib/helpers.mjs';
+
+module.exports = {      // linemod-remove
+  ErrorWithCause,       // linemod-remove
+  findCauseByReference, // linemod-remove
+  getErrorCause,        // linemod-remove
+  stackWithCauses,      // linemod-remove
+  messageWithCauses,    // linemod-remove
+};                      // linemod-remove
+
+},{"./lib/error-with-cause":118,"./lib/helpers":119}],118:[function(require,module,exports){
+'use strict';
+
+/** @template [T=undefined] */
+class ErrorWithCause extends Error { // linemod-prefix-with: export
+  /**
+   * @param {string} message
+   * @param {{ cause?: T }} options
+   */
+  constructor (message, { cause } = {}) {
+    super(message);
+
+    /** @type {string} */
+    this.name = ErrorWithCause.name;
+    if (cause) {
+      /** @type {T} */
+      this.cause = cause;
+    }
+    /** @type {string} */
+    this.message = message;
+  }
+}
+
+module.exports = {      // linemod-remove
+  ErrorWithCause,       // linemod-remove
+};                      // linemod-remove
+
+},{}],119:[function(require,module,exports){
+'use strict';
+
+/**
+ * @template {Error} T
+ * @param {unknown} err
+ * @param {new(...args: any[]) => T} reference
+ * @returns {T|undefined}
+ */
+const findCauseByReference = (err, reference) => { // linemod-prefix-with: export
+  if (!err || !reference) return;
+  if (!(err instanceof Error)) return;
+  if (
+    !(reference.prototype instanceof Error) &&
+    // @ts-ignore
+    reference !== Error
+  ) return;
+
+  /**
+   * Ensures we don't go circular
+   *
+   * @type {Set<Error>}
+   */
+  const seen = new Set();
+
+  /** @type {Error|undefined} */
+  let currentErr = err;
+
+  while (currentErr && !seen.has(currentErr)) {
+    seen.add(currentErr);
+
+    if (currentErr instanceof reference) {
+      return currentErr;
+    }
+
+    currentErr = getErrorCause(currentErr);
+  }
+};
+
+/**
+ * @param {Error|{ cause?: unknown|(()=>err)}} err
+ * @returns {Error|undefined}
+ */
+const getErrorCause = (err) => { // linemod-prefix-with: export
+  if (!err || typeof err !== 'object' || !('cause' in err)) {
+    return;
+  }
+
+  // VError / NError style causes
+  if (typeof err.cause === 'function') {
+    const causeResult = err.cause();
+
+    return causeResult instanceof Error
+      ? causeResult
+      : undefined;
+  } else {
+    return err.cause instanceof Error
+      ? err.cause
+      : undefined;
+  }
+};
+
+/**
+ * Internal method that keeps a track of which error we have already added, to avoid circular recursion
+ *
+ * @private
+ * @param {Error} err
+ * @param {Set<Error>} seen
+ * @returns {string}
+ */
+const _stackWithCauses = (err, seen) => {
+  if (!(err instanceof Error)) return '';
+
+  const stack = err.stack || '';
+
+  // Ensure we don't go circular or crazily deep
+  if (seen.has(err)) {
+    return stack + '\ncauses have become circular...';
+  }
+
+  const cause = getErrorCause(err);
+
+  // TODO: Follow up in https://github.com/nodejs/node/issues/38725#issuecomment-920309092 on how to log stuff
+
+  if (cause) {
+    seen.add(err);
+    return (stack + '\ncaused by: ' + _stackWithCauses(cause, seen));
+  } else {
+    return stack;
+  }
+};
+
+/**
+ * @param {Error} err
+ * @returns {string}
+ */
+const stackWithCauses = (err) => _stackWithCauses(err, new Set()); // linemod-prefix-with: export
+
+/**
+ * Internal method that keeps a track of which error we have already added, to avoid circular recursion
+ *
+ * @private
+ * @param {Error} err
+ * @param {Set<Error>} seen
+ * @param {boolean} [skip]
+ * @returns {string}
+ */
+const _messageWithCauses = (err, seen, skip) => {
+  if (!(err instanceof Error)) return '';
+
+  const message = skip ? '' : (err.message || '');
+
+  // Ensure we don't go circular or crazily deep
+  if (seen.has(err)) {
+    return message + ': ...';
+  }
+
+  const cause = getErrorCause(err);
+
+  if (cause) {
+    seen.add(err);
+
+    const skipIfVErrorStyleCause = 'cause' in err && typeof err.cause === 'function';
+
+    return (message +
+      (skipIfVErrorStyleCause ? '' : ': ') +
+      _messageWithCauses(cause, seen, skipIfVErrorStyleCause));
+  } else {
+    return message;
+  }
+};
+
+/**
+ * @param {Error} err
+ * @returns {string}
+ */
+const messageWithCauses = (err) => _messageWithCauses(err, new Set()); // linemod-prefix-with: export
+
+module.exports = {      // linemod-remove
+  findCauseByReference, // linemod-remove
+  getErrorCause,        // linemod-remove
+  stackWithCauses,      // linemod-remove
+  messageWithCauses,    // linemod-remove
+};                      // linemod-remove
+
+},{}],120:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -5296,7 +11453,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],43:[function(require,module,exports){
+},{}],121:[function(require,module,exports){
 (function (process){(function (){
 /**
  * @license React
@@ -35168,7 +41325,7 @@ if (
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":42,"react":80,"scheduler":86}],44:[function(require,module,exports){
+},{"_process":120,"react":158,"scheduler":164}],122:[function(require,module,exports){
 /**
  * @license React
  * react-dom.production.min.js
@@ -35493,7 +41650,7 @@ exports.hydrateRoot=function(a,b,c){if(!ol(a))throw Error(p(405));var d=null!=c&
 e);return new nl(b)};exports.render=function(a,b,c){if(!pl(b))throw Error(p(200));return sl(null,a,b,!1,c)};exports.unmountComponentAtNode=function(a){if(!pl(a))throw Error(p(40));return a._reactRootContainer?(Sk(function(){sl(null,null,a,!1,function(){a._reactRootContainer=null;a[uf]=null})}),!0):!1};exports.unstable_batchedUpdates=Rk;
 exports.unstable_renderSubtreeIntoContainer=function(a,b,c,d){if(!pl(c))throw Error(p(200));if(null==a||void 0===a._reactInternals)throw Error(p(38));return sl(a,b,c,!1,d)};exports.version="18.2.0-next-9e3b772b8-20220608";
 
-},{"react":80,"scheduler":86}],45:[function(require,module,exports){
+},{"react":158,"scheduler":164}],123:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -35535,7 +41692,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"./cjs/react-dom.development.js":43,"./cjs/react-dom.production.min.js":44,"_process":42}],46:[function(require,module,exports){
+},{"./cjs/react-dom.development.js":121,"./cjs/react-dom.production.min.js":122,"_process":120}],124:[function(require,module,exports){
 'use strict';
 var React = require('react');
 
@@ -35594,7 +41751,7 @@ function isChildren(x) {
   return typeof x === 'string' || typeof x === 'number' || Array.isArray(x);
 }
 
-},{"./parse-tag":47,"react":80}],47:[function(require,module,exports){
+},{"./parse-tag":125,"react":158}],125:[function(require,module,exports){
 /* eslint-disable complexity, max-statements */
 'use strict';
 
@@ -35651,7 +41808,7 @@ function parseTag(tag, props) {
   return tagName ? tagName.toLowerCase() : 'div';
 }
 
-},{}],48:[function(require,module,exports){
+},{}],126:[function(require,module,exports){
 (function (process){(function (){
 /**
  * @license React
@@ -35876,7 +42033,7 @@ exports.typeOf = typeOf;
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":42}],49:[function(require,module,exports){
+},{"_process":120}],127:[function(require,module,exports){
 /**
  * @license React
  * react-is.production.min.js
@@ -35892,9 +42049,9 @@ exports.SuspenseList=n;exports.isAsyncMode=function(){return!1};exports.isConcur
 exports.isPortal=function(a){return v(a)===c};exports.isProfiler=function(a){return v(a)===f};exports.isStrictMode=function(a){return v(a)===e};exports.isSuspense=function(a){return v(a)===m};exports.isSuspenseList=function(a){return v(a)===n};
 exports.isValidElementType=function(a){return"string"===typeof a||"function"===typeof a||a===d||a===f||a===e||a===m||a===n||a===t||"object"===typeof a&&null!==a&&(a.$$typeof===q||a.$$typeof===p||a.$$typeof===g||a.$$typeof===h||a.$$typeof===l||a.$$typeof===u||void 0!==a.getModuleId)?!0:!1};exports.typeOf=v;
 
-},{}],50:[function(require,module,exports){
-arguments[4][35][0].apply(exports,arguments)
-},{"./cjs/react-is.development.js":48,"./cjs/react-is.production.min.js":49,"_process":42,"dup":35}],51:[function(require,module,exports){
+},{}],128:[function(require,module,exports){
+arguments[4][108][0].apply(exports,arguments)
+},{"./cjs/react-is.development.js":126,"./cjs/react-is.production.min.js":127,"_process":120,"dup":108}],129:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -35913,7 +42070,7 @@ if (process.env.NODE_ENV !== 'production') {
 var _default = ReactReduxContext;
 exports.default = _default;
 }).call(this)}).call(this,require('_process'))
-},{"_process":42,"react":80}],52:[function(require,module,exports){
+},{"_process":120,"react":158}],130:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -35971,7 +42128,7 @@ function Provider({
 
 var _default = Provider;
 exports.default = _default;
-},{"../utils/Subscription":68,"../utils/useIsomorphicLayoutEffect":74,"./Context":51,"react":80}],53:[function(require,module,exports){
+},{"../utils/Subscription":146,"../utils/useIsomorphicLayoutEffect":152,"./Context":129,"react":158}],131:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -36412,7 +42569,7 @@ function connect(mapStateToProps, mapDispatchToProps, mergeProps, {
 var _default = connect;
 exports.default = _default;
 }).call(this)}).call(this,require('_process'))
-},{"../connect/mapDispatchToProps":55,"../connect/mapStateToProps":56,"../connect/mergeProps":57,"../connect/selectorFactory":58,"../utils/Subscription":68,"../utils/shallowEqual":73,"../utils/useIsomorphicLayoutEffect":74,"../utils/useSyncExternalStore":75,"../utils/warning":77,"./Context":51,"@babel/runtime/helpers/extends":7,"@babel/runtime/helpers/interopRequireDefault":8,"@babel/runtime/helpers/objectWithoutPropertiesLoose":10,"_process":42,"hoist-non-react-statics":32,"react":80,"react-is":50}],54:[function(require,module,exports){
+},{"../connect/mapDispatchToProps":133,"../connect/mapStateToProps":134,"../connect/mergeProps":135,"../connect/selectorFactory":136,"../utils/Subscription":146,"../utils/shallowEqual":151,"../utils/useIsomorphicLayoutEffect":152,"../utils/useSyncExternalStore":153,"../utils/warning":155,"./Context":129,"@babel/runtime/helpers/extends":7,"@babel/runtime/helpers/interopRequireDefault":8,"@babel/runtime/helpers/objectWithoutPropertiesLoose":10,"_process":120,"hoist-non-react-statics":105,"react":158,"react-is":128}],132:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -36423,7 +42580,7 @@ function createInvalidArgFactory(arg, name) {
     throw new Error(`Invalid value of type ${typeof arg} for ${name} argument when connecting component ${options.wrappedComponentName}.`);
   };
 }
-},{}],55:[function(require,module,exports){
+},{}],133:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -36444,7 +42601,7 @@ function mapDispatchToPropsFactory(mapDispatchToProps) {
   })) : typeof mapDispatchToProps === 'function' ? // @ts-ignore
   (0, _wrapMapToProps.wrapMapToPropsFunc)(mapDispatchToProps, 'mapDispatchToProps') : (0, _invalidArgFactory.createInvalidArgFactory)(mapDispatchToProps, 'mapDispatchToProps');
 }
-},{"../utils/bindActionCreators":70,"./invalidArgFactory":54,"./wrapMapToProps":60,"@babel/runtime/helpers/interopRequireDefault":8}],56:[function(require,module,exports){
+},{"../utils/bindActionCreators":148,"./invalidArgFactory":132,"./wrapMapToProps":138,"@babel/runtime/helpers/interopRequireDefault":8}],134:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -36458,7 +42615,7 @@ function mapStateToPropsFactory(mapStateToProps) {
   return !mapStateToProps ? (0, _wrapMapToProps.wrapMapToPropsConstant)(() => ({})) : typeof mapStateToProps === 'function' ? // @ts-ignore
   (0, _wrapMapToProps.wrapMapToPropsFunc)(mapStateToProps, 'mapStateToProps') : (0, _invalidArgFactory.createInvalidArgFactory)(mapStateToProps, 'mapStateToProps');
 }
-},{"./invalidArgFactory":54,"./wrapMapToProps":60}],57:[function(require,module,exports){
+},{"./invalidArgFactory":132,"./wrapMapToProps":138}],135:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -36507,7 +42664,7 @@ function mergePropsFactory(mergeProps) {
   return !mergeProps ? () => defaultMergeProps : typeof mergeProps === 'function' ? wrapMergePropsFunc(mergeProps) : (0, _invalidArgFactory.createInvalidArgFactory)(mergeProps, 'mergeProps');
 }
 }).call(this)}).call(this,require('_process'))
-},{"../utils/verifyPlainObject":76,"./invalidArgFactory":54,"@babel/runtime/helpers/extends":7,"@babel/runtime/helpers/interopRequireDefault":8,"_process":42}],58:[function(require,module,exports){
+},{"../utils/verifyPlainObject":154,"./invalidArgFactory":132,"@babel/runtime/helpers/extends":7,"@babel/runtime/helpers/interopRequireDefault":8,"_process":120}],136:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -36605,7 +42762,7 @@ function finalPropsSelectorFactory(dispatch, _ref) {
   return pureFinalPropsSelectorFactory(mapStateToProps, mapDispatchToProps, mergeProps, dispatch, options);
 }
 }).call(this)}).call(this,require('_process'))
-},{"./verifySubselectors":59,"@babel/runtime/helpers/interopRequireDefault":8,"@babel/runtime/helpers/objectWithoutPropertiesLoose":10,"_process":42}],59:[function(require,module,exports){
+},{"./verifySubselectors":137,"@babel/runtime/helpers/interopRequireDefault":8,"@babel/runtime/helpers/objectWithoutPropertiesLoose":10,"_process":120}],137:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -36630,7 +42787,7 @@ function verifySubselectors(mapStateToProps, mapDispatchToProps, mergeProps) {
   verify(mapDispatchToProps, 'mapDispatchToProps');
   verify(mergeProps, 'mergeProps');
 }
-},{"../utils/warning":77,"@babel/runtime/helpers/interopRequireDefault":8}],60:[function(require,module,exports){
+},{"../utils/warning":155,"@babel/runtime/helpers/interopRequireDefault":8}],138:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -36715,7 +42872,7 @@ function wrapMapToPropsFunc(mapToProps, methodName) {
   };
 }
 }).call(this)}).call(this,require('_process'))
-},{"../utils/verifyPlainObject":76,"@babel/runtime/helpers/interopRequireDefault":8,"_process":42}],61:[function(require,module,exports){
+},{"../utils/verifyPlainObject":154,"@babel/runtime/helpers/interopRequireDefault":8,"_process":120}],139:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -36821,7 +42978,7 @@ Object.keys(_types).forEach(function (key) {
     }
   });
 });
-},{"./components/Context":51,"./components/Provider":52,"./components/connect":53,"./hooks/useDispatch":62,"./hooks/useSelector":64,"./hooks/useStore":65,"./types":67,"./utils/shallowEqual":73,"@babel/runtime/helpers/interopRequireDefault":8}],62:[function(require,module,exports){
+},{"./components/Context":129,"./components/Provider":130,"./components/connect":131,"./hooks/useDispatch":140,"./hooks/useSelector":142,"./hooks/useStore":143,"./types":145,"./utils/shallowEqual":151,"@babel/runtime/helpers/interopRequireDefault":8}],140:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -36872,7 +43029,7 @@ function createDispatchHook(context = _Context.ReactReduxContext) {
 
 const useDispatch = /*#__PURE__*/createDispatchHook();
 exports.useDispatch = useDispatch;
-},{"../components/Context":51,"./useStore":65}],63:[function(require,module,exports){
+},{"../components/Context":129,"./useStore":143}],141:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -36909,7 +43066,7 @@ function useReduxContext() {
   return contextValue;
 }
 }).call(this)}).call(this,require('_process'))
-},{"../components/Context":51,"_process":42,"react":80}],64:[function(require,module,exports){
+},{"../components/Context":129,"_process":120,"react":158}],142:[function(require,module,exports){
 (function (process){(function (){
 "use strict";
 
@@ -36997,7 +43154,7 @@ function createSelectorHook(context = _Context.ReactReduxContext) {
 const useSelector = /*#__PURE__*/createSelectorHook();
 exports.useSelector = useSelector;
 }).call(this)}).call(this,require('_process'))
-},{"../components/Context":51,"../utils/useSyncExternalStore":75,"./useReduxContext":63,"_process":42,"react":80}],65:[function(require,module,exports){
+},{"../components/Context":129,"../utils/useSyncExternalStore":153,"./useReduxContext":141,"_process":120,"react":158}],143:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37046,7 +43203,7 @@ function createStoreHook(context = _Context.ReactReduxContext) {
 
 const useStore = /*#__PURE__*/createStoreHook();
 exports.useStore = useStore;
-},{"../components/Context":51,"./useReduxContext":63,"react":80}],66:[function(require,module,exports){
+},{"../components/Context":129,"./useReduxContext":141,"react":158}],144:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37093,9 +43250,9 @@ Object.keys(_exports).forEach(function (key) {
 // with standard React renderers (ReactDOM, React Native)
 
 (0, _batch.setBatch)(_reactBatchedUpdates.unstable_batchedUpdates);
-},{"./components/connect":53,"./exports":61,"./hooks/useSelector":64,"./utils/batch":69,"./utils/reactBatchedUpdates":72,"use-sync-external-store/shim":92,"use-sync-external-store/shim/with-selector":93}],67:[function(require,module,exports){
+},{"./components/connect":131,"./exports":139,"./hooks/useSelector":142,"./utils/batch":147,"./utils/reactBatchedUpdates":150,"use-sync-external-store/shim":171,"use-sync-external-store/shim/with-selector":172}],145:[function(require,module,exports){
 "use strict";
-},{}],68:[function(require,module,exports){
+},{}],146:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37227,7 +43384,7 @@ function createSubscription(store, parentSub) {
   };
   return subscription;
 }
-},{"./batch":69}],69:[function(require,module,exports){
+},{"./batch":147}],147:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37248,7 +43405,7 @@ exports.setBatch = setBatch;
 const getBatch = () => batch;
 
 exports.getBatch = getBatch;
-},{}],70:[function(require,module,exports){
+},{}],148:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37267,7 +43424,7 @@ function bindActionCreators(actionCreators, dispatch) {
 
   return boundActionCreators;
 }
-},{}],71:[function(require,module,exports){
+},{}],149:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37289,7 +43446,7 @@ function isPlainObject(obj) {
 
   return proto === baseProto;
 }
-},{}],72:[function(require,module,exports){
+},{}],150:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37301,7 +43458,7 @@ Object.defineProperty(exports, "unstable_batchedUpdates", {
 });
 
 var _reactDom = require("react-dom");
-},{"react-dom":45}],73:[function(require,module,exports){
+},{"react-dom":123}],151:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37334,7 +43491,7 @@ function shallowEqual(objA, objB) {
 
   return true;
 }
-},{}],74:[function(require,module,exports){
+},{}],152:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37355,7 +43512,7 @@ const canUseDOM = !!(typeof window !== 'undefined' && typeof window.document !==
 exports.canUseDOM = canUseDOM;
 const useIsomorphicLayoutEffect = canUseDOM ? _react.useLayoutEffect : _react.useEffect;
 exports.useIsomorphicLayoutEffect = useIsomorphicLayoutEffect;
-},{"react":80}],75:[function(require,module,exports){
+},{"react":158}],153:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37366,7 +43523,7 @@ const notInitialized = () => {
 };
 
 exports.notInitialized = notInitialized;
-},{}],76:[function(require,module,exports){
+},{}],154:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -37383,7 +43540,7 @@ function verifyPlainObject(value, displayName, methodName) {
     (0, _warning.default)(`${methodName}() in ${displayName} must return a plain object. Instead received ${value}.`);
   }
 }
-},{"./isPlainObject":71,"./warning":77,"@babel/runtime/helpers/interopRequireDefault":8}],77:[function(require,module,exports){
+},{"./isPlainObject":149,"./warning":155,"@babel/runtime/helpers/interopRequireDefault":8}],155:[function(require,module,exports){
 "use strict";
 
 exports.__esModule = true;
@@ -37413,7 +43570,7 @@ function warning(message) {
   /* eslint-enable no-empty */
 
 }
-},{}],78:[function(require,module,exports){
+},{}],156:[function(require,module,exports){
 (function (process){(function (){
 /**
  * @license React
@@ -40156,7 +46313,7 @@ if (
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":42}],79:[function(require,module,exports){
+},{"_process":120}],157:[function(require,module,exports){
 /**
  * @license React
  * react.production.min.js
@@ -40184,7 +46341,7 @@ exports.useCallback=function(a,b){return U.current.useCallback(a,b)};exports.use
 exports.useInsertionEffect=function(a,b){return U.current.useInsertionEffect(a,b)};exports.useLayoutEffect=function(a,b){return U.current.useLayoutEffect(a,b)};exports.useMemo=function(a,b){return U.current.useMemo(a,b)};exports.useReducer=function(a,b,e){return U.current.useReducer(a,b,e)};exports.useRef=function(a){return U.current.useRef(a)};exports.useState=function(a){return U.current.useState(a)};exports.useSyncExternalStore=function(a,b,e){return U.current.useSyncExternalStore(a,b,e)};
 exports.useTransition=function(){return U.current.useTransition()};exports.version="18.2.0";
 
-},{}],80:[function(require,module,exports){
+},{}],158:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -40195,12 +46352,12 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"./cjs/react.development.js":78,"./cjs/react.production.min.js":79,"_process":42}],81:[function(require,module,exports){
+},{"./cjs/react.development.js":156,"./cjs/react.production.min.js":157,"_process":120}],159:[function(require,module,exports){
 (function (global){(function (){
 !function(e,t){"object"==typeof exports&&"undefined"!=typeof module?t(exports):"function"==typeof define&&define.amd?define(["exports"],t):t(e.reduxLogger=e.reduxLogger||{})}(this,function(e){"use strict";function t(e,t){e.super_=t,e.prototype=Object.create(t.prototype,{constructor:{value:e,enumerable:!1,writable:!0,configurable:!0}})}function r(e,t){Object.defineProperty(this,"kind",{value:e,enumerable:!0}),t&&t.length&&Object.defineProperty(this,"path",{value:t,enumerable:!0})}function n(e,t,r){n.super_.call(this,"E",e),Object.defineProperty(this,"lhs",{value:t,enumerable:!0}),Object.defineProperty(this,"rhs",{value:r,enumerable:!0})}function o(e,t){o.super_.call(this,"N",e),Object.defineProperty(this,"rhs",{value:t,enumerable:!0})}function i(e,t){i.super_.call(this,"D",e),Object.defineProperty(this,"lhs",{value:t,enumerable:!0})}function a(e,t,r){a.super_.call(this,"A",e),Object.defineProperty(this,"index",{value:t,enumerable:!0}),Object.defineProperty(this,"item",{value:r,enumerable:!0})}function f(e,t,r){var n=e.slice((r||t)+1||e.length);return e.length=t<0?e.length+t:t,e.push.apply(e,n),e}function u(e){var t="undefined"==typeof e?"undefined":N(e);return"object"!==t?t:e===Math?"math":null===e?"null":Array.isArray(e)?"array":"[object Date]"===Object.prototype.toString.call(e)?"date":"function"==typeof e.toString&&/^\/.*\//.test(e.toString())?"regexp":"object"}function l(e,t,r,c,s,d,p){s=s||[],p=p||[];var g=s.slice(0);if("undefined"!=typeof d){if(c){if("function"==typeof c&&c(g,d))return;if("object"===("undefined"==typeof c?"undefined":N(c))){if(c.prefilter&&c.prefilter(g,d))return;if(c.normalize){var h=c.normalize(g,d,e,t);h&&(e=h[0],t=h[1])}}}g.push(d)}"regexp"===u(e)&&"regexp"===u(t)&&(e=e.toString(),t=t.toString());var y="undefined"==typeof e?"undefined":N(e),v="undefined"==typeof t?"undefined":N(t),b="undefined"!==y||p&&p[p.length-1].lhs&&p[p.length-1].lhs.hasOwnProperty(d),m="undefined"!==v||p&&p[p.length-1].rhs&&p[p.length-1].rhs.hasOwnProperty(d);if(!b&&m)r(new o(g,t));else if(!m&&b)r(new i(g,e));else if(u(e)!==u(t))r(new n(g,e,t));else if("date"===u(e)&&e-t!==0)r(new n(g,e,t));else if("object"===y&&null!==e&&null!==t)if(p.filter(function(t){return t.lhs===e}).length)e!==t&&r(new n(g,e,t));else{if(p.push({lhs:e,rhs:t}),Array.isArray(e)){var w;e.length;for(w=0;w<e.length;w++)w>=t.length?r(new a(g,w,new i(void 0,e[w]))):l(e[w],t[w],r,c,g,w,p);for(;w<t.length;)r(new a(g,w,new o(void 0,t[w++])))}else{var x=Object.keys(e),S=Object.keys(t);x.forEach(function(n,o){var i=S.indexOf(n);i>=0?(l(e[n],t[n],r,c,g,n,p),S=f(S,i)):l(e[n],void 0,r,c,g,n,p)}),S.forEach(function(e){l(void 0,t[e],r,c,g,e,p)})}p.length=p.length-1}else e!==t&&("number"===y&&isNaN(e)&&isNaN(t)||r(new n(g,e,t)))}function c(e,t,r,n){return n=n||[],l(e,t,function(e){e&&n.push(e)},r),n.length?n:void 0}function s(e,t,r){if(r.path&&r.path.length){var n,o=e[t],i=r.path.length-1;for(n=0;n<i;n++)o=o[r.path[n]];switch(r.kind){case"A":s(o[r.path[n]],r.index,r.item);break;case"D":delete o[r.path[n]];break;case"E":case"N":o[r.path[n]]=r.rhs}}else switch(r.kind){case"A":s(e[t],r.index,r.item);break;case"D":e=f(e,t);break;case"E":case"N":e[t]=r.rhs}return e}function d(e,t,r){if(e&&t&&r&&r.kind){for(var n=e,o=-1,i=r.path?r.path.length-1:0;++o<i;)"undefined"==typeof n[r.path[o]]&&(n[r.path[o]]="number"==typeof r.path[o]?[]:{}),n=n[r.path[o]];switch(r.kind){case"A":s(r.path?n[r.path[o]]:n,r.index,r.item);break;case"D":delete n[r.path[o]];break;case"E":case"N":n[r.path[o]]=r.rhs}}}function p(e,t,r){if(r.path&&r.path.length){var n,o=e[t],i=r.path.length-1;for(n=0;n<i;n++)o=o[r.path[n]];switch(r.kind){case"A":p(o[r.path[n]],r.index,r.item);break;case"D":o[r.path[n]]=r.lhs;break;case"E":o[r.path[n]]=r.lhs;break;case"N":delete o[r.path[n]]}}else switch(r.kind){case"A":p(e[t],r.index,r.item);break;case"D":e[t]=r.lhs;break;case"E":e[t]=r.lhs;break;case"N":e=f(e,t)}return e}function g(e,t,r){if(e&&t&&r&&r.kind){var n,o,i=e;for(o=r.path.length-1,n=0;n<o;n++)"undefined"==typeof i[r.path[n]]&&(i[r.path[n]]={}),i=i[r.path[n]];switch(r.kind){case"A":p(i[r.path[n]],r.index,r.item);break;case"D":i[r.path[n]]=r.lhs;break;case"E":i[r.path[n]]=r.lhs;break;case"N":delete i[r.path[n]]}}}function h(e,t,r){if(e&&t){var n=function(n){r&&!r(e,t,n)||d(e,t,n)};l(e,t,n)}}function y(e){return"color: "+F[e].color+"; font-weight: bold"}function v(e){var t=e.kind,r=e.path,n=e.lhs,o=e.rhs,i=e.index,a=e.item;switch(t){case"E":return[r.join("."),n,"→",o];case"N":return[r.join("."),o];case"D":return[r.join(".")];case"A":return[r.join(".")+"["+i+"]",a];default:return[]}}function b(e,t,r,n){var o=c(e,t);try{n?r.groupCollapsed("diff"):r.group("diff")}catch(e){r.log("diff")}o?o.forEach(function(e){var t=e.kind,n=v(e);r.log.apply(r,["%c "+F[t].text,y(t)].concat(P(n)))}):r.log("—— no diff ——");try{r.groupEnd()}catch(e){r.log("—— diff end —— ")}}function m(e,t,r,n){switch("undefined"==typeof e?"undefined":N(e)){case"object":return"function"==typeof e[n]?e[n].apply(e,P(r)):e[n];case"function":return e(t);default:return e}}function w(e){var t=e.timestamp,r=e.duration;return function(e,n,o){var i=["action"];return i.push("%c"+String(e.type)),t&&i.push("%c@ "+n),r&&i.push("%c(in "+o.toFixed(2)+" ms)"),i.join(" ")}}function x(e,t){var r=t.logger,n=t.actionTransformer,o=t.titleFormatter,i=void 0===o?w(t):o,a=t.collapsed,f=t.colors,u=t.level,l=t.diff,c="undefined"==typeof t.titleFormatter;e.forEach(function(o,s){var d=o.started,p=o.startedTime,g=o.action,h=o.prevState,y=o.error,v=o.took,w=o.nextState,x=e[s+1];x&&(w=x.prevState,v=x.started-d);var S=n(g),k="function"==typeof a?a(function(){return w},g,o):a,j=D(p),E=f.title?"color: "+f.title(S)+";":"",A=["color: gray; font-weight: lighter;"];A.push(E),t.timestamp&&A.push("color: gray; font-weight: lighter;"),t.duration&&A.push("color: gray; font-weight: lighter;");var O=i(S,j,v);try{k?f.title&&c?r.groupCollapsed.apply(r,["%c "+O].concat(A)):r.groupCollapsed(O):f.title&&c?r.group.apply(r,["%c "+O].concat(A)):r.group(O)}catch(e){r.log(O)}var N=m(u,S,[h],"prevState"),P=m(u,S,[S],"action"),C=m(u,S,[y,h],"error"),F=m(u,S,[w],"nextState");if(N)if(f.prevState){var L="color: "+f.prevState(h)+"; font-weight: bold";r[N]("%c prev state",L,h)}else r[N]("prev state",h);if(P)if(f.action){var T="color: "+f.action(S)+"; font-weight: bold";r[P]("%c action    ",T,S)}else r[P]("action    ",S);if(y&&C)if(f.error){var M="color: "+f.error(y,h)+"; font-weight: bold;";r[C]("%c error     ",M,y)}else r[C]("error     ",y);if(F)if(f.nextState){var _="color: "+f.nextState(w)+"; font-weight: bold";r[F]("%c next state",_,w)}else r[F]("next state",w);l&&b(h,w,r,k);try{r.groupEnd()}catch(e){r.log("—— log end ——")}})}function S(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},t=Object.assign({},L,e),r=t.logger,n=t.stateTransformer,o=t.errorTransformer,i=t.predicate,a=t.logErrors,f=t.diffPredicate;if("undefined"==typeof r)return function(){return function(e){return function(t){return e(t)}}};if(e.getState&&e.dispatch)return console.error("[redux-logger] redux-logger not installed. Make sure to pass logger instance as middleware:\n// Logger with default options\nimport { logger } from 'redux-logger'\nconst store = createStore(\n  reducer,\n  applyMiddleware(logger)\n)\n// Or you can create your own logger with custom options http://bit.ly/redux-logger-options\nimport createLogger from 'redux-logger'\nconst logger = createLogger({\n  // ...options\n});\nconst store = createStore(\n  reducer,\n  applyMiddleware(logger)\n)\n"),function(){return function(e){return function(t){return e(t)}}};var u=[];return function(e){var r=e.getState;return function(e){return function(l){if("function"==typeof i&&!i(r,l))return e(l);var c={};u.push(c),c.started=O.now(),c.startedTime=new Date,c.prevState=n(r()),c.action=l;var s=void 0;if(a)try{s=e(l)}catch(e){c.error=o(e)}else s=e(l);c.took=O.now()-c.started,c.nextState=n(r());var d=t.diff&&"function"==typeof f?f(r,l):t.diff;if(x(u,Object.assign({},t,{diff:d})),u.length=0,c.error)throw c.error;return s}}}}var k,j,E=function(e,t){return new Array(t+1).join(e)},A=function(e,t){return E("0",t-e.toString().length)+e},D=function(e){return A(e.getHours(),2)+":"+A(e.getMinutes(),2)+":"+A(e.getSeconds(),2)+"."+A(e.getMilliseconds(),3)},O="undefined"!=typeof performance&&null!==performance&&"function"==typeof performance.now?performance:Date,N="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e},P=function(e){if(Array.isArray(e)){for(var t=0,r=Array(e.length);t<e.length;t++)r[t]=e[t];return r}return Array.from(e)},C=[];k="object"===("undefined"==typeof global?"undefined":N(global))&&global?global:"undefined"!=typeof window?window:{},j=k.DeepDiff,j&&C.push(function(){"undefined"!=typeof j&&k.DeepDiff===c&&(k.DeepDiff=j,j=void 0)}),t(n,r),t(o,r),t(i,r),t(a,r),Object.defineProperties(c,{diff:{value:c,enumerable:!0},observableDiff:{value:l,enumerable:!0},applyDiff:{value:h,enumerable:!0},applyChange:{value:d,enumerable:!0},revertChange:{value:g,enumerable:!0},isConflict:{value:function(){return"undefined"!=typeof j},enumerable:!0},noConflict:{value:function(){return C&&(C.forEach(function(e){e()}),C=null),c},enumerable:!0}});var F={E:{color:"#2196F3",text:"CHANGED:"},N:{color:"#4CAF50",text:"ADDED:"},D:{color:"#F44336",text:"DELETED:"},A:{color:"#2196F3",text:"ARRAY:"}},L={level:"log",logger:console,logErrors:!0,collapsed:void 0,predicate:void 0,duration:!1,timestamp:!0,stateTransformer:function(e){return e},actionTransformer:function(e){return e},errorTransformer:function(e){return e},colors:{title:function(){return"inherit"},prevState:function(){return"#9E9E9E"},action:function(){return"#03A9F4"},nextState:function(){return"#4CAF50"},error:function(){return"#F20404"}},diff:!1,diffPredicate:void 0,transformer:void 0},T=function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},t=e.dispatch,r=e.getState;return"function"==typeof t||"function"==typeof r?S()({dispatch:t,getState:r}):void console.error("\n[redux-logger v3] BREAKING CHANGE\n[redux-logger v3] Since 3.0.0 redux-logger exports by default logger with default settings.\n[redux-logger v3] Change\n[redux-logger v3] import createLogger from 'redux-logger'\n[redux-logger v3] to\n[redux-logger v3] import { createLogger } from 'redux-logger'\n")};e.defaults=L,e.createLogger=S,e.logger=T,e.default=T,Object.defineProperty(e,"__esModule",{value:!0})});
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],82:[function(require,module,exports){
+},{}],160:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -40241,7 +46398,7 @@ var thunk = createThunkMiddleware(); // Attach the factory function so users can
 thunk.withExtraArgument = createThunkMiddleware;
 var _default = thunk;
 exports.default = _default;
-},{}],83:[function(require,module,exports){
+},{}],161:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -40964,7 +47121,7 @@ exports.createStore = createStore;
 exports.legacy_createStore = legacy_createStore;
 
 }).call(this)}).call(this,require('_process'))
-},{"@babel/runtime/helpers/objectSpread2":9,"_process":42}],84:[function(require,module,exports){
+},{"@babel/runtime/helpers/objectSpread2":9,"_process":120}],162:[function(require,module,exports){
 (function (process,setImmediate){(function (){
 /**
  * @license React
@@ -41602,7 +47759,7 @@ if (
 }
 
 }).call(this)}).call(this,require('_process'),require("timers").setImmediate)
-},{"_process":42,"timers":87}],85:[function(require,module,exports){
+},{"_process":120,"timers":166}],163:[function(require,module,exports){
 (function (setImmediate){(function (){
 /**
  * @license React
@@ -41625,7 +47782,7 @@ exports.unstable_scheduleCallback=function(a,b,c){var d=exports.unstable_now();"
 exports.unstable_shouldYield=M;exports.unstable_wrapCallback=function(a){var b=y;return function(){var c=y;y=b;try{return a.apply(this,arguments)}finally{y=c}}};
 
 }).call(this)}).call(this,require("timers").setImmediate)
-},{"timers":87}],86:[function(require,module,exports){
+},{"timers":166}],164:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -41636,7 +47793,1061 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"./cjs/scheduler.development.js":84,"./cjs/scheduler.production.min.js":85,"_process":42}],87:[function(require,module,exports){
+},{"./cjs/scheduler.development.js":162,"./cjs/scheduler.production.min.js":163,"_process":120}],165:[function(require,module,exports){
+(function (global, factory) {
+    typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
+    typeof define === 'function' && define.amd ? define(['exports'], factory) :
+    (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.Superstruct = {}));
+})(this, (function (exports) { 'use strict';
+
+    /**
+     * A `StructFailure` represents a single specific failure in validation.
+     */
+    /**
+     * `StructError` objects are thrown (or returned) when validation fails.
+     *
+     * Validation logic is design to exit early for maximum performance. The error
+     * represents the first error encountered during validation. For more detail,
+     * the `error.failures` property is a generator function that can be run to
+     * continue validation and receive all the failures in the data.
+     */
+    class StructError extends TypeError {
+        constructor(failure, failures) {
+            let cached;
+            const { message, explanation, ...rest } = failure;
+            const { path } = failure;
+            const msg = path.length === 0 ? message : `At path: ${path.join('.')} -- ${message}`;
+            super(explanation ?? msg);
+            if (explanation != null)
+                this.cause = msg;
+            Object.assign(this, rest);
+            this.name = this.constructor.name;
+            this.failures = () => {
+                return (cached ?? (cached = [failure, ...failures()]));
+            };
+        }
+    }
+
+    /**
+     * Check if a value is an iterator.
+     */
+    function isIterable(x) {
+        return isObject(x) && typeof x[Symbol.iterator] === 'function';
+    }
+    /**
+     * Check if a value is a plain object.
+     */
+    function isObject(x) {
+        return typeof x === 'object' && x != null;
+    }
+    /**
+     * Check if a value is a plain object.
+     */
+    function isPlainObject(x) {
+        if (Object.prototype.toString.call(x) !== '[object Object]') {
+            return false;
+        }
+        const prototype = Object.getPrototypeOf(x);
+        return prototype === null || prototype === Object.prototype;
+    }
+    /**
+     * Return a value as a printable string.
+     */
+    function print(value) {
+        if (typeof value === 'symbol') {
+            return value.toString();
+        }
+        return typeof value === 'string' ? JSON.stringify(value) : `${value}`;
+    }
+    /**
+     * Shifts (removes and returns) the first value from the `input` iterator.
+     * Like `Array.prototype.shift()` but for an `Iterator`.
+     */
+    function shiftIterator(input) {
+        const { done, value } = input.next();
+        return done ? undefined : value;
+    }
+    /**
+     * Convert a single validation result to a failure.
+     */
+    function toFailure(result, context, struct, value) {
+        if (result === true) {
+            return;
+        }
+        else if (result === false) {
+            result = {};
+        }
+        else if (typeof result === 'string') {
+            result = { message: result };
+        }
+        const { path, branch } = context;
+        const { type } = struct;
+        const { refinement, message = `Expected a value of type \`${type}\`${refinement ? ` with refinement \`${refinement}\`` : ''}, but received: \`${print(value)}\``, } = result;
+        return {
+            value,
+            type,
+            refinement,
+            key: path[path.length - 1],
+            path,
+            branch,
+            ...result,
+            message,
+        };
+    }
+    /**
+     * Convert a validation result to an iterable of failures.
+     */
+    function* toFailures(result, context, struct, value) {
+        if (!isIterable(result)) {
+            result = [result];
+        }
+        for (const r of result) {
+            const failure = toFailure(r, context, struct, value);
+            if (failure) {
+                yield failure;
+            }
+        }
+    }
+    /**
+     * Check a value against a struct, traversing deeply into nested values, and
+     * returning an iterator of failures or success.
+     */
+    function* run(value, struct, options = {}) {
+        const { path = [], branch = [value], coerce = false, mask = false } = options;
+        const ctx = { path, branch };
+        if (coerce) {
+            value = struct.coercer(value, ctx);
+            if (mask &&
+                struct.type !== 'type' &&
+                isObject(struct.schema) &&
+                isObject(value) &&
+                !Array.isArray(value)) {
+                for (const key in value) {
+                    if (struct.schema[key] === undefined) {
+                        delete value[key];
+                    }
+                }
+            }
+        }
+        let status = 'valid';
+        for (const failure of struct.validator(value, ctx)) {
+            failure.explanation = options.message;
+            status = 'not_valid';
+            yield [failure, undefined];
+        }
+        for (let [k, v, s] of struct.entries(value, ctx)) {
+            const ts = run(v, s, {
+                path: k === undefined ? path : [...path, k],
+                branch: k === undefined ? branch : [...branch, v],
+                coerce,
+                mask,
+                message: options.message,
+            });
+            for (const t of ts) {
+                if (t[0]) {
+                    status = t[0].refinement != null ? 'not_refined' : 'not_valid';
+                    yield [t[0], undefined];
+                }
+                else if (coerce) {
+                    v = t[1];
+                    if (k === undefined) {
+                        value = v;
+                    }
+                    else if (value instanceof Map) {
+                        value.set(k, v);
+                    }
+                    else if (value instanceof Set) {
+                        value.add(v);
+                    }
+                    else if (isObject(value)) {
+                        if (v !== undefined || k in value)
+                            value[k] = v;
+                    }
+                }
+            }
+        }
+        if (status !== 'not_valid') {
+            for (const failure of struct.refiner(value, ctx)) {
+                failure.explanation = options.message;
+                status = 'not_refined';
+                yield [failure, undefined];
+            }
+        }
+        if (status === 'valid') {
+            yield [undefined, value];
+        }
+    }
+
+    /**
+     * `Struct` objects encapsulate the validation logic for a specific type of
+     * values. Once constructed, you use the `assert`, `is` or `validate` helpers to
+     * validate unknown input data against the struct.
+     */
+    class Struct {
+        constructor(props) {
+            const { type, schema, validator, refiner, coercer = (value) => value, entries = function* () { }, } = props;
+            this.type = type;
+            this.schema = schema;
+            this.entries = entries;
+            this.coercer = coercer;
+            if (validator) {
+                this.validator = (value, context) => {
+                    const result = validator(value, context);
+                    return toFailures(result, context, this, value);
+                };
+            }
+            else {
+                this.validator = () => [];
+            }
+            if (refiner) {
+                this.refiner = (value, context) => {
+                    const result = refiner(value, context);
+                    return toFailures(result, context, this, value);
+                };
+            }
+            else {
+                this.refiner = () => [];
+            }
+        }
+        /**
+         * Assert that a value passes the struct's validation, throwing if it doesn't.
+         */
+        assert(value, message) {
+            return assert(value, this, message);
+        }
+        /**
+         * Create a value with the struct's coercion logic, then validate it.
+         */
+        create(value, message) {
+            return create(value, this, message);
+        }
+        /**
+         * Check if a value passes the struct's validation.
+         */
+        is(value) {
+            return is(value, this);
+        }
+        /**
+         * Mask a value, coercing and validating it, but returning only the subset of
+         * properties defined by the struct's schema.
+         */
+        mask(value, message) {
+            return mask(value, this, message);
+        }
+        /**
+         * Validate a value with the struct's validation logic, returning a tuple
+         * representing the result.
+         *
+         * You may optionally pass `true` for the `withCoercion` argument to coerce
+         * the value before attempting to validate it. If you do, the result will
+         * contain the coerced result when successful.
+         */
+        validate(value, options = {}) {
+            return validate(value, this, options);
+        }
+    }
+    /**
+     * Assert that a value passes a struct, throwing if it doesn't.
+     */
+    function assert(value, struct, message) {
+        const result = validate(value, struct, { message });
+        if (result[0]) {
+            throw result[0];
+        }
+    }
+    /**
+     * Create a value with the coercion logic of struct and validate it.
+     */
+    function create(value, struct, message) {
+        const result = validate(value, struct, { coerce: true, message });
+        if (result[0]) {
+            throw result[0];
+        }
+        else {
+            return result[1];
+        }
+    }
+    /**
+     * Mask a value, returning only the subset of properties defined by a struct.
+     */
+    function mask(value, struct, message) {
+        const result = validate(value, struct, { coerce: true, mask: true, message });
+        if (result[0]) {
+            throw result[0];
+        }
+        else {
+            return result[1];
+        }
+    }
+    /**
+     * Check if a value passes a struct.
+     */
+    function is(value, struct) {
+        const result = validate(value, struct);
+        return !result[0];
+    }
+    /**
+     * Validate a value against a struct, returning an error if invalid, or the
+     * value (with potential coercion) if valid.
+     */
+    function validate(value, struct, options = {}) {
+        const tuples = run(value, struct, options);
+        const tuple = shiftIterator(tuples);
+        if (tuple[0]) {
+            const error = new StructError(tuple[0], function* () {
+                for (const t of tuples) {
+                    if (t[0]) {
+                        yield t[0];
+                    }
+                }
+            });
+            return [error, undefined];
+        }
+        else {
+            const v = tuple[1];
+            return [undefined, v];
+        }
+    }
+
+    function assign(...Structs) {
+        const isType = Structs[0].type === 'type';
+        const schemas = Structs.map((s) => s.schema);
+        const schema = Object.assign({}, ...schemas);
+        return isType ? type(schema) : object(schema);
+    }
+    /**
+     * Define a new struct type with a custom validation function.
+     */
+    function define(name, validator) {
+        return new Struct({ type: name, schema: null, validator });
+    }
+    /**
+     * Create a new struct based on an existing struct, but the value is allowed to
+     * be `undefined`. `log` will be called if the value is not `undefined`.
+     */
+    function deprecated(struct, log) {
+        return new Struct({
+            ...struct,
+            refiner: (value, ctx) => value === undefined || struct.refiner(value, ctx),
+            validator(value, ctx) {
+                if (value === undefined) {
+                    return true;
+                }
+                else {
+                    log(value, ctx);
+                    return struct.validator(value, ctx);
+                }
+            },
+        });
+    }
+    /**
+     * Create a struct with dynamic validation logic.
+     *
+     * The callback will receive the value currently being validated, and must
+     * return a struct object to validate it with. This can be useful to model
+     * validation logic that changes based on its input.
+     */
+    function dynamic(fn) {
+        return new Struct({
+            type: 'dynamic',
+            schema: null,
+            *entries(value, ctx) {
+                const struct = fn(value, ctx);
+                yield* struct.entries(value, ctx);
+            },
+            validator(value, ctx) {
+                const struct = fn(value, ctx);
+                return struct.validator(value, ctx);
+            },
+            coercer(value, ctx) {
+                const struct = fn(value, ctx);
+                return struct.coercer(value, ctx);
+            },
+            refiner(value, ctx) {
+                const struct = fn(value, ctx);
+                return struct.refiner(value, ctx);
+            },
+        });
+    }
+    /**
+     * Create a struct with lazily evaluated validation logic.
+     *
+     * The first time validation is run with the struct, the callback will be called
+     * and must return a struct object to use. This is useful for cases where you
+     * want to have self-referential structs for nested data structures to avoid a
+     * circular definition problem.
+     */
+    function lazy(fn) {
+        let struct;
+        return new Struct({
+            type: 'lazy',
+            schema: null,
+            *entries(value, ctx) {
+                struct ?? (struct = fn());
+                yield* struct.entries(value, ctx);
+            },
+            validator(value, ctx) {
+                struct ?? (struct = fn());
+                return struct.validator(value, ctx);
+            },
+            coercer(value, ctx) {
+                struct ?? (struct = fn());
+                return struct.coercer(value, ctx);
+            },
+            refiner(value, ctx) {
+                struct ?? (struct = fn());
+                return struct.refiner(value, ctx);
+            },
+        });
+    }
+    /**
+     * Create a new struct based on an existing object struct, but excluding
+     * specific properties.
+     *
+     * Like TypeScript's `Omit` utility.
+     */
+    function omit(struct, keys) {
+        const { schema } = struct;
+        const subschema = { ...schema };
+        for (const key of keys) {
+            delete subschema[key];
+        }
+        switch (struct.type) {
+            case 'type':
+                return type(subschema);
+            default:
+                return object(subschema);
+        }
+    }
+    /**
+     * Create a new struct based on an existing object struct, but with all of its
+     * properties allowed to be `undefined`.
+     *
+     * Like TypeScript's `Partial` utility.
+     */
+    function partial(struct) {
+        const schema = struct instanceof Struct ? { ...struct.schema } : { ...struct };
+        for (const key in schema) {
+            schema[key] = optional(schema[key]);
+        }
+        return object(schema);
+    }
+    /**
+     * Create a new struct based on an existing object struct, but only including
+     * specific properties.
+     *
+     * Like TypeScript's `Pick` utility.
+     */
+    function pick(struct, keys) {
+        const { schema } = struct;
+        const subschema = {};
+        for (const key of keys) {
+            subschema[key] = schema[key];
+        }
+        return object(subschema);
+    }
+    /**
+     * Define a new struct type with a custom validation function.
+     *
+     * @deprecated This function has been renamed to `define`.
+     */
+    function struct(name, validator) {
+        console.warn('superstruct@0.11 - The `struct` helper has been renamed to `define`.');
+        return define(name, validator);
+    }
+
+    /**
+     * Ensure that any value passes validation.
+     */
+    function any() {
+        return define('any', () => true);
+    }
+    function array(Element) {
+        return new Struct({
+            type: 'array',
+            schema: Element,
+            *entries(value) {
+                if (Element && Array.isArray(value)) {
+                    for (const [i, v] of value.entries()) {
+                        yield [i, v, Element];
+                    }
+                }
+            },
+            coercer(value) {
+                return Array.isArray(value) ? value.slice() : value;
+            },
+            validator(value) {
+                return (Array.isArray(value) ||
+                    `Expected an array value, but received: ${print(value)}`);
+            },
+        });
+    }
+    /**
+     * Ensure that a value is a bigint.
+     */
+    function bigint() {
+        return define('bigint', (value) => {
+            return typeof value === 'bigint';
+        });
+    }
+    /**
+     * Ensure that a value is a boolean.
+     */
+    function boolean() {
+        return define('boolean', (value) => {
+            return typeof value === 'boolean';
+        });
+    }
+    /**
+     * Ensure that a value is a valid `Date`.
+     *
+     * Note: this also ensures that the value is *not* an invalid `Date` object,
+     * which can occur when parsing a date fails but still returns a `Date`.
+     */
+    function date() {
+        return define('date', (value) => {
+            return ((value instanceof Date && !isNaN(value.getTime())) ||
+                `Expected a valid \`Date\` object, but received: ${print(value)}`);
+        });
+    }
+    function enums(values) {
+        const schema = {};
+        const description = values.map((v) => print(v)).join();
+        for (const key of values) {
+            schema[key] = key;
+        }
+        return new Struct({
+            type: 'enums',
+            schema,
+            validator(value) {
+                return (values.includes(value) ||
+                    `Expected one of \`${description}\`, but received: ${print(value)}`);
+            },
+        });
+    }
+    /**
+     * Ensure that a value is a function.
+     */
+    function func() {
+        return define('func', (value) => {
+            return (typeof value === 'function' ||
+                `Expected a function, but received: ${print(value)}`);
+        });
+    }
+    /**
+     * Ensure that a value is an instance of a specific class.
+     */
+    function instance(Class) {
+        return define('instance', (value) => {
+            return (value instanceof Class ||
+                `Expected a \`${Class.name}\` instance, but received: ${print(value)}`);
+        });
+    }
+    /**
+     * Ensure that a value is an integer.
+     */
+    function integer() {
+        return define('integer', (value) => {
+            return ((typeof value === 'number' && !isNaN(value) && Number.isInteger(value)) ||
+                `Expected an integer, but received: ${print(value)}`);
+        });
+    }
+    /**
+     * Ensure that a value matches all of a set of types.
+     */
+    function intersection(Structs) {
+        return new Struct({
+            type: 'intersection',
+            schema: null,
+            *entries(value, ctx) {
+                for (const S of Structs) {
+                    yield* S.entries(value, ctx);
+                }
+            },
+            *validator(value, ctx) {
+                for (const S of Structs) {
+                    yield* S.validator(value, ctx);
+                }
+            },
+            *refiner(value, ctx) {
+                for (const S of Structs) {
+                    yield* S.refiner(value, ctx);
+                }
+            },
+        });
+    }
+    function literal(constant) {
+        const description = print(constant);
+        const t = typeof constant;
+        return new Struct({
+            type: 'literal',
+            schema: t === 'string' || t === 'number' || t === 'boolean' ? constant : null,
+            validator(value) {
+                return (value === constant ||
+                    `Expected the literal \`${description}\`, but received: ${print(value)}`);
+            },
+        });
+    }
+    function map(Key, Value) {
+        return new Struct({
+            type: 'map',
+            schema: null,
+            *entries(value) {
+                if (Key && Value && value instanceof Map) {
+                    for (const [k, v] of value.entries()) {
+                        yield [k, k, Key];
+                        yield [k, v, Value];
+                    }
+                }
+            },
+            coercer(value) {
+                return value instanceof Map ? new Map(value) : value;
+            },
+            validator(value) {
+                return (value instanceof Map ||
+                    `Expected a \`Map\` object, but received: ${print(value)}`);
+            },
+        });
+    }
+    /**
+     * Ensure that no value ever passes validation.
+     */
+    function never() {
+        return define('never', () => false);
+    }
+    /**
+     * Augment an existing struct to allow `null` values.
+     */
+    function nullable(struct) {
+        return new Struct({
+            ...struct,
+            validator: (value, ctx) => value === null || struct.validator(value, ctx),
+            refiner: (value, ctx) => value === null || struct.refiner(value, ctx),
+        });
+    }
+    /**
+     * Ensure that a value is a number.
+     */
+    function number() {
+        return define('number', (value) => {
+            return ((typeof value === 'number' && !isNaN(value)) ||
+                `Expected a number, but received: ${print(value)}`);
+        });
+    }
+    function object(schema) {
+        const knowns = schema ? Object.keys(schema) : [];
+        const Never = never();
+        return new Struct({
+            type: 'object',
+            schema: schema ? schema : null,
+            *entries(value) {
+                if (schema && isObject(value)) {
+                    const unknowns = new Set(Object.keys(value));
+                    for (const key of knowns) {
+                        unknowns.delete(key);
+                        yield [key, value[key], schema[key]];
+                    }
+                    for (const key of unknowns) {
+                        yield [key, value[key], Never];
+                    }
+                }
+            },
+            validator(value) {
+                return (isObject(value) || `Expected an object, but received: ${print(value)}`);
+            },
+            coercer(value) {
+                return isObject(value) ? { ...value } : value;
+            },
+        });
+    }
+    /**
+     * Augment a struct to allow `undefined` values.
+     */
+    function optional(struct) {
+        return new Struct({
+            ...struct,
+            validator: (value, ctx) => value === undefined || struct.validator(value, ctx),
+            refiner: (value, ctx) => value === undefined || struct.refiner(value, ctx),
+        });
+    }
+    /**
+     * Ensure that a value is an object with keys and values of specific types, but
+     * without ensuring any specific shape of properties.
+     *
+     * Like TypeScript's `Record` utility.
+     */
+    function record(Key, Value) {
+        return new Struct({
+            type: 'record',
+            schema: null,
+            *entries(value) {
+                if (isObject(value)) {
+                    for (const k in value) {
+                        const v = value[k];
+                        yield [k, k, Key];
+                        yield [k, v, Value];
+                    }
+                }
+            },
+            validator(value) {
+                return (isObject(value) || `Expected an object, but received: ${print(value)}`);
+            },
+        });
+    }
+    /**
+     * Ensure that a value is a `RegExp`.
+     *
+     * Note: this does not test the value against the regular expression! For that
+     * you need to use the `pattern()` refinement.
+     */
+    function regexp() {
+        return define('regexp', (value) => {
+            return value instanceof RegExp;
+        });
+    }
+    function set(Element) {
+        return new Struct({
+            type: 'set',
+            schema: null,
+            *entries(value) {
+                if (Element && value instanceof Set) {
+                    for (const v of value) {
+                        yield [v, v, Element];
+                    }
+                }
+            },
+            coercer(value) {
+                return value instanceof Set ? new Set(value) : value;
+            },
+            validator(value) {
+                return (value instanceof Set ||
+                    `Expected a \`Set\` object, but received: ${print(value)}`);
+            },
+        });
+    }
+    /**
+     * Ensure that a value is a string.
+     */
+    function string() {
+        return define('string', (value) => {
+            return (typeof value === 'string' ||
+                `Expected a string, but received: ${print(value)}`);
+        });
+    }
+    /**
+     * Ensure that a value is a tuple of a specific length, and that each of its
+     * elements is of a specific type.
+     */
+    function tuple(Structs) {
+        const Never = never();
+        return new Struct({
+            type: 'tuple',
+            schema: null,
+            *entries(value) {
+                if (Array.isArray(value)) {
+                    const length = Math.max(Structs.length, value.length);
+                    for (let i = 0; i < length; i++) {
+                        yield [i, value[i], Structs[i] || Never];
+                    }
+                }
+            },
+            validator(value) {
+                return (Array.isArray(value) ||
+                    `Expected an array, but received: ${print(value)}`);
+            },
+        });
+    }
+    /**
+     * Ensure that a value has a set of known properties of specific types.
+     *
+     * Note: Unrecognized properties are allowed and untouched. This is similar to
+     * how TypeScript's structural typing works.
+     */
+    function type(schema) {
+        const keys = Object.keys(schema);
+        return new Struct({
+            type: 'type',
+            schema,
+            *entries(value) {
+                if (isObject(value)) {
+                    for (const k of keys) {
+                        yield [k, value[k], schema[k]];
+                    }
+                }
+            },
+            validator(value) {
+                return (isObject(value) || `Expected an object, but received: ${print(value)}`);
+            },
+            coercer(value) {
+                return isObject(value) ? { ...value } : value;
+            },
+        });
+    }
+    /**
+     * Ensure that a value matches one of a set of types.
+     */
+    function union(Structs) {
+        const description = Structs.map((s) => s.type).join(' | ');
+        return new Struct({
+            type: 'union',
+            schema: null,
+            coercer(value) {
+                for (const S of Structs) {
+                    const [error, coerced] = S.validate(value, { coerce: true });
+                    if (!error) {
+                        return coerced;
+                    }
+                }
+                return value;
+            },
+            validator(value, ctx) {
+                const failures = [];
+                for (const S of Structs) {
+                    const [...tuples] = run(value, S, ctx);
+                    const [first] = tuples;
+                    if (!first[0]) {
+                        return [];
+                    }
+                    else {
+                        for (const [failure] of tuples) {
+                            if (failure) {
+                                failures.push(failure);
+                            }
+                        }
+                    }
+                }
+                return [
+                    `Expected the value to satisfy a union of \`${description}\`, but received: ${print(value)}`,
+                    ...failures,
+                ];
+            },
+        });
+    }
+    /**
+     * Ensure that any value passes validation, without widening its type to `any`.
+     */
+    function unknown() {
+        return define('unknown', () => true);
+    }
+
+    /**
+     * Augment a `Struct` to add an additional coercion step to its input.
+     *
+     * This allows you to transform input data before validating it, to increase the
+     * likelihood that it passes validation—for example for default values, parsing
+     * different formats, etc.
+     *
+     * Note: You must use `create(value, Struct)` on the value to have the coercion
+     * take effect! Using simply `assert()` or `is()` will not use coercion.
+     */
+    function coerce(struct, condition, coercer) {
+        return new Struct({
+            ...struct,
+            coercer: (value, ctx) => {
+                return is(value, condition)
+                    ? struct.coercer(coercer(value, ctx), ctx)
+                    : struct.coercer(value, ctx);
+            },
+        });
+    }
+    /**
+     * Augment a struct to replace `undefined` values with a default.
+     *
+     * Note: You must use `create(value, Struct)` on the value to have the coercion
+     * take effect! Using simply `assert()` or `is()` will not use coercion.
+     */
+    function defaulted(struct, fallback, options = {}) {
+        return coerce(struct, unknown(), (x) => {
+            const f = typeof fallback === 'function' ? fallback() : fallback;
+            if (x === undefined) {
+                return f;
+            }
+            if (!options.strict && isPlainObject(x) && isPlainObject(f)) {
+                const ret = { ...x };
+                let changed = false;
+                for (const key in f) {
+                    if (ret[key] === undefined) {
+                        ret[key] = f[key];
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    return ret;
+                }
+            }
+            return x;
+        });
+    }
+    /**
+     * Augment a struct to trim string inputs.
+     *
+     * Note: You must use `create(value, Struct)` on the value to have the coercion
+     * take effect! Using simply `assert()` or `is()` will not use coercion.
+     */
+    function trimmed(struct) {
+        return coerce(struct, string(), (x) => x.trim());
+    }
+
+    /**
+     * Ensure that a string, array, map, or set is empty.
+     */
+    function empty(struct) {
+        return refine(struct, 'empty', (value) => {
+            const size = getSize(value);
+            return (size === 0 ||
+                `Expected an empty ${struct.type} but received one with a size of \`${size}\``);
+        });
+    }
+    function getSize(value) {
+        if (value instanceof Map || value instanceof Set) {
+            return value.size;
+        }
+        else {
+            return value.length;
+        }
+    }
+    /**
+     * Ensure that a number or date is below a threshold.
+     */
+    function max(struct, threshold, options = {}) {
+        const { exclusive } = options;
+        return refine(struct, 'max', (value) => {
+            return exclusive
+                ? value < threshold
+                : value <= threshold ||
+                    `Expected a ${struct.type} less than ${exclusive ? '' : 'or equal to '}${threshold} but received \`${value}\``;
+        });
+    }
+    /**
+     * Ensure that a number or date is above a threshold.
+     */
+    function min(struct, threshold, options = {}) {
+        const { exclusive } = options;
+        return refine(struct, 'min', (value) => {
+            return exclusive
+                ? value > threshold
+                : value >= threshold ||
+                    `Expected a ${struct.type} greater than ${exclusive ? '' : 'or equal to '}${threshold} but received \`${value}\``;
+        });
+    }
+    /**
+     * Ensure that a string, array, map or set is not empty.
+     */
+    function nonempty(struct) {
+        return refine(struct, 'nonempty', (value) => {
+            const size = getSize(value);
+            return (size > 0 || `Expected a nonempty ${struct.type} but received an empty one`);
+        });
+    }
+    /**
+     * Ensure that a string matches a regular expression.
+     */
+    function pattern(struct, regexp) {
+        return refine(struct, 'pattern', (value) => {
+            return (regexp.test(value) ||
+                `Expected a ${struct.type} matching \`/${regexp.source}/\` but received "${value}"`);
+        });
+    }
+    /**
+     * Ensure that a string, array, number, date, map, or set has a size (or length, or time) between `min` and `max`.
+     */
+    function size(struct, min, max = min) {
+        const expected = `Expected a ${struct.type}`;
+        const of = min === max ? `of \`${min}\`` : `between \`${min}\` and \`${max}\``;
+        return refine(struct, 'size', (value) => {
+            if (typeof value === 'number' || value instanceof Date) {
+                return ((min <= value && value <= max) ||
+                    `${expected} ${of} but received \`${value}\``);
+            }
+            else if (value instanceof Map || value instanceof Set) {
+                const { size } = value;
+                return ((min <= size && size <= max) ||
+                    `${expected} with a size ${of} but received one with a size of \`${size}\``);
+            }
+            else {
+                const { length } = value;
+                return ((min <= length && length <= max) ||
+                    `${expected} with a length ${of} but received one with a length of \`${length}\``);
+            }
+        });
+    }
+    /**
+     * Augment a `Struct` to add an additional refinement to the validation.
+     *
+     * The refiner function is guaranteed to receive a value of the struct's type,
+     * because the struct's existing validation will already have passed. This
+     * allows you to layer additional validation on top of existing structs.
+     */
+    function refine(struct, name, refiner) {
+        return new Struct({
+            ...struct,
+            *refiner(value, ctx) {
+                yield* struct.refiner(value, ctx);
+                const result = refiner(value, ctx);
+                const failures = toFailures(result, ctx, struct, value);
+                for (const failure of failures) {
+                    yield { ...failure, refinement: name };
+                }
+            },
+        });
+    }
+
+    exports.Struct = Struct;
+    exports.StructError = StructError;
+    exports.any = any;
+    exports.array = array;
+    exports.assert = assert;
+    exports.assign = assign;
+    exports.bigint = bigint;
+    exports.boolean = boolean;
+    exports.coerce = coerce;
+    exports.create = create;
+    exports.date = date;
+    exports.defaulted = defaulted;
+    exports.define = define;
+    exports.deprecated = deprecated;
+    exports.dynamic = dynamic;
+    exports.empty = empty;
+    exports.enums = enums;
+    exports.func = func;
+    exports.instance = instance;
+    exports.integer = integer;
+    exports.intersection = intersection;
+    exports.is = is;
+    exports.lazy = lazy;
+    exports.literal = literal;
+    exports.map = map;
+    exports.mask = mask;
+    exports.max = max;
+    exports.min = min;
+    exports.never = never;
+    exports.nonempty = nonempty;
+    exports.nullable = nullable;
+    exports.number = number;
+    exports.object = object;
+    exports.omit = omit;
+    exports.optional = optional;
+    exports.partial = partial;
+    exports.pattern = pattern;
+    exports.pick = pick;
+    exports.record = record;
+    exports.refine = refine;
+    exports.regexp = regexp;
+    exports.set = set;
+    exports.size = size;
+    exports.string = string;
+    exports.struct = struct;
+    exports.trimmed = trimmed;
+    exports.tuple = tuple;
+    exports.type = type;
+    exports.union = union;
+    exports.unknown = unknown;
+    exports.validate = validate;
+
+}));
+
+
+},{}],166:[function(require,module,exports){
 (function (setImmediate,clearImmediate){(function (){
 var nextTick = require('process/browser.js').nextTick;
 var apply = Function.prototype.apply;
@@ -41715,7 +48926,7 @@ exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate :
   delete immediateIds[id];
 };
 }).call(this)}).call(this,require("timers").setImmediate,require("timers").clearImmediate)
-},{"process/browser.js":42,"timers":87}],88:[function(require,module,exports){
+},{"process/browser.js":120,"timers":166}],167:[function(require,module,exports){
 (function (process){(function (){
 /**
  * @license React
@@ -41958,7 +49169,7 @@ if (
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":42,"react":80}],89:[function(require,module,exports){
+},{"_process":120,"react":158}],168:[function(require,module,exports){
 /**
  * @license React
  * use-sync-external-store-shim.production.min.js
@@ -41971,7 +49182,7 @@ if (
 'use strict';var e=require("react");function h(a,b){return a===b&&(0!==a||1/a===1/b)||a!==a&&b!==b}var k="function"===typeof Object.is?Object.is:h,l=e.useState,m=e.useEffect,n=e.useLayoutEffect,p=e.useDebugValue;function q(a,b){var d=b(),f=l({inst:{value:d,getSnapshot:b}}),c=f[0].inst,g=f[1];n(function(){c.value=d;c.getSnapshot=b;r(c)&&g({inst:c})},[a,d,b]);m(function(){r(c)&&g({inst:c});return a(function(){r(c)&&g({inst:c})})},[a]);p(d);return d}
 function r(a){var b=a.getSnapshot;a=a.value;try{var d=b();return!k(a,d)}catch(f){return!0}}function t(a,b){return b()}var u="undefined"===typeof window||"undefined"===typeof window.document||"undefined"===typeof window.document.createElement?t:q;exports.useSyncExternalStore=void 0!==e.useSyncExternalStore?e.useSyncExternalStore:u;
 
-},{"react":80}],90:[function(require,module,exports){
+},{"react":158}],169:[function(require,module,exports){
 (function (process){(function (){
 /**
  * @license React
@@ -42140,7 +49351,7 @@ if (
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":42,"react":80,"use-sync-external-store/shim":92}],91:[function(require,module,exports){
+},{"_process":120,"react":158,"use-sync-external-store/shim":171}],170:[function(require,module,exports){
 /**
  * @license React
  * use-sync-external-store-shim/with-selector.production.min.js
@@ -42154,7 +49365,7 @@ if (
 exports.useSyncExternalStoreWithSelector=function(a,b,e,l,g){var c=t(null);if(null===c.current){var f={hasValue:!1,value:null};c.current=f}else f=c.current;c=v(function(){function a(a){if(!c){c=!0;d=a;a=l(a);if(void 0!==g&&f.hasValue){var b=f.value;if(g(b,a))return k=b}return k=a}b=k;if(q(d,a))return b;var e=l(a);if(void 0!==g&&g(b,e))return b;d=a;return k=e}var c=!1,d,k,m=void 0===e?null:e;return[function(){return a(b())},null===m?void 0:function(){return a(m())}]},[b,e,l,g]);var d=r(a,c[0],c[1]);
 u(function(){f.hasValue=!0;f.value=d},[d]);w(d);return d};
 
-},{"react":80,"use-sync-external-store/shim":92}],92:[function(require,module,exports){
+},{"react":158,"use-sync-external-store/shim":171}],171:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -42165,7 +49376,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"../cjs/use-sync-external-store-shim.development.js":88,"../cjs/use-sync-external-store-shim.production.min.js":89,"_process":42}],93:[function(require,module,exports){
+},{"../cjs/use-sync-external-store-shim.development.js":167,"../cjs/use-sync-external-store-shim.production.min.js":168,"_process":120}],172:[function(require,module,exports){
 (function (process){(function (){
 'use strict';
 
@@ -42176,7 +49387,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 }).call(this)}).call(this,require('_process'))
-},{"../cjs/use-sync-external-store-shim/with-selector.development.js":90,"../cjs/use-sync-external-store-shim/with-selector.production.min.js":91,"_process":42}],94:[function(require,module,exports){
+},{"../cjs/use-sync-external-store-shim/with-selector.development.js":169,"../cjs/use-sync-external-store-shim/with-selector.production.min.js":170,"_process":120}],173:[function(require,module,exports){
 (function (global){(function (){
 'use strict';
 
@@ -42235,7 +49446,7 @@ module.exports = function whichTypedArray(value) {
 };
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"available-typed-arrays":15,"call-bind/callBound":21,"for-each":23,"gopd":27,"has-tostringtag/shams":30,"is-typed-array":41}],95:[function(require,module,exports){
+},{"available-typed-arrays":86,"call-bind/callBound":92,"for-each":96,"gopd":100,"has-tostringtag/shams":103,"is-typed-array":114}],174:[function(require,module,exports){
 module.exports = extend
 
 var hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -42256,4 +49467,442 @@ function extend() {
     return target
 }
 
-},{}]},{},[3]);
+},{}],175:[function(require,module,exports){
+'use strict'
+module.exports = function (Yallist) {
+  Yallist.prototype[Symbol.iterator] = function* () {
+    for (let walker = this.head; walker; walker = walker.next) {
+      yield walker.value
+    }
+  }
+}
+
+},{}],176:[function(require,module,exports){
+'use strict'
+module.exports = Yallist
+
+Yallist.Node = Node
+Yallist.create = Yallist
+
+function Yallist (list) {
+  var self = this
+  if (!(self instanceof Yallist)) {
+    self = new Yallist()
+  }
+
+  self.tail = null
+  self.head = null
+  self.length = 0
+
+  if (list && typeof list.forEach === 'function') {
+    list.forEach(function (item) {
+      self.push(item)
+    })
+  } else if (arguments.length > 0) {
+    for (var i = 0, l = arguments.length; i < l; i++) {
+      self.push(arguments[i])
+    }
+  }
+
+  return self
+}
+
+Yallist.prototype.removeNode = function (node) {
+  if (node.list !== this) {
+    throw new Error('removing node which does not belong to this list')
+  }
+
+  var next = node.next
+  var prev = node.prev
+
+  if (next) {
+    next.prev = prev
+  }
+
+  if (prev) {
+    prev.next = next
+  }
+
+  if (node === this.head) {
+    this.head = next
+  }
+  if (node === this.tail) {
+    this.tail = prev
+  }
+
+  node.list.length--
+  node.next = null
+  node.prev = null
+  node.list = null
+
+  return next
+}
+
+Yallist.prototype.unshiftNode = function (node) {
+  if (node === this.head) {
+    return
+  }
+
+  if (node.list) {
+    node.list.removeNode(node)
+  }
+
+  var head = this.head
+  node.list = this
+  node.next = head
+  if (head) {
+    head.prev = node
+  }
+
+  this.head = node
+  if (!this.tail) {
+    this.tail = node
+  }
+  this.length++
+}
+
+Yallist.prototype.pushNode = function (node) {
+  if (node === this.tail) {
+    return
+  }
+
+  if (node.list) {
+    node.list.removeNode(node)
+  }
+
+  var tail = this.tail
+  node.list = this
+  node.prev = tail
+  if (tail) {
+    tail.next = node
+  }
+
+  this.tail = node
+  if (!this.head) {
+    this.head = node
+  }
+  this.length++
+}
+
+Yallist.prototype.push = function () {
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    push(this, arguments[i])
+  }
+  return this.length
+}
+
+Yallist.prototype.unshift = function () {
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    unshift(this, arguments[i])
+  }
+  return this.length
+}
+
+Yallist.prototype.pop = function () {
+  if (!this.tail) {
+    return undefined
+  }
+
+  var res = this.tail.value
+  this.tail = this.tail.prev
+  if (this.tail) {
+    this.tail.next = null
+  } else {
+    this.head = null
+  }
+  this.length--
+  return res
+}
+
+Yallist.prototype.shift = function () {
+  if (!this.head) {
+    return undefined
+  }
+
+  var res = this.head.value
+  this.head = this.head.next
+  if (this.head) {
+    this.head.prev = null
+  } else {
+    this.tail = null
+  }
+  this.length--
+  return res
+}
+
+Yallist.prototype.forEach = function (fn, thisp) {
+  thisp = thisp || this
+  for (var walker = this.head, i = 0; walker !== null; i++) {
+    fn.call(thisp, walker.value, i, this)
+    walker = walker.next
+  }
+}
+
+Yallist.prototype.forEachReverse = function (fn, thisp) {
+  thisp = thisp || this
+  for (var walker = this.tail, i = this.length - 1; walker !== null; i--) {
+    fn.call(thisp, walker.value, i, this)
+    walker = walker.prev
+  }
+}
+
+Yallist.prototype.get = function (n) {
+  for (var i = 0, walker = this.head; walker !== null && i < n; i++) {
+    // abort out of the list early if we hit a cycle
+    walker = walker.next
+  }
+  if (i === n && walker !== null) {
+    return walker.value
+  }
+}
+
+Yallist.prototype.getReverse = function (n) {
+  for (var i = 0, walker = this.tail; walker !== null && i < n; i++) {
+    // abort out of the list early if we hit a cycle
+    walker = walker.prev
+  }
+  if (i === n && walker !== null) {
+    return walker.value
+  }
+}
+
+Yallist.prototype.map = function (fn, thisp) {
+  thisp = thisp || this
+  var res = new Yallist()
+  for (var walker = this.head; walker !== null;) {
+    res.push(fn.call(thisp, walker.value, this))
+    walker = walker.next
+  }
+  return res
+}
+
+Yallist.prototype.mapReverse = function (fn, thisp) {
+  thisp = thisp || this
+  var res = new Yallist()
+  for (var walker = this.tail; walker !== null;) {
+    res.push(fn.call(thisp, walker.value, this))
+    walker = walker.prev
+  }
+  return res
+}
+
+Yallist.prototype.reduce = function (fn, initial) {
+  var acc
+  var walker = this.head
+  if (arguments.length > 1) {
+    acc = initial
+  } else if (this.head) {
+    walker = this.head.next
+    acc = this.head.value
+  } else {
+    throw new TypeError('Reduce of empty list with no initial value')
+  }
+
+  for (var i = 0; walker !== null; i++) {
+    acc = fn(acc, walker.value, i)
+    walker = walker.next
+  }
+
+  return acc
+}
+
+Yallist.prototype.reduceReverse = function (fn, initial) {
+  var acc
+  var walker = this.tail
+  if (arguments.length > 1) {
+    acc = initial
+  } else if (this.tail) {
+    walker = this.tail.prev
+    acc = this.tail.value
+  } else {
+    throw new TypeError('Reduce of empty list with no initial value')
+  }
+
+  for (var i = this.length - 1; walker !== null; i--) {
+    acc = fn(acc, walker.value, i)
+    walker = walker.prev
+  }
+
+  return acc
+}
+
+Yallist.prototype.toArray = function () {
+  var arr = new Array(this.length)
+  for (var i = 0, walker = this.head; walker !== null; i++) {
+    arr[i] = walker.value
+    walker = walker.next
+  }
+  return arr
+}
+
+Yallist.prototype.toArrayReverse = function () {
+  var arr = new Array(this.length)
+  for (var i = 0, walker = this.tail; walker !== null; i++) {
+    arr[i] = walker.value
+    walker = walker.prev
+  }
+  return arr
+}
+
+Yallist.prototype.slice = function (from, to) {
+  to = to || this.length
+  if (to < 0) {
+    to += this.length
+  }
+  from = from || 0
+  if (from < 0) {
+    from += this.length
+  }
+  var ret = new Yallist()
+  if (to < from || to < 0) {
+    return ret
+  }
+  if (from < 0) {
+    from = 0
+  }
+  if (to > this.length) {
+    to = this.length
+  }
+  for (var i = 0, walker = this.head; walker !== null && i < from; i++) {
+    walker = walker.next
+  }
+  for (; walker !== null && i < to; i++, walker = walker.next) {
+    ret.push(walker.value)
+  }
+  return ret
+}
+
+Yallist.prototype.sliceReverse = function (from, to) {
+  to = to || this.length
+  if (to < 0) {
+    to += this.length
+  }
+  from = from || 0
+  if (from < 0) {
+    from += this.length
+  }
+  var ret = new Yallist()
+  if (to < from || to < 0) {
+    return ret
+  }
+  if (from < 0) {
+    from = 0
+  }
+  if (to > this.length) {
+    to = this.length
+  }
+  for (var i = this.length, walker = this.tail; walker !== null && i > to; i--) {
+    walker = walker.prev
+  }
+  for (; walker !== null && i > from; i--, walker = walker.prev) {
+    ret.push(walker.value)
+  }
+  return ret
+}
+
+Yallist.prototype.splice = function (start, deleteCount, ...nodes) {
+  if (start > this.length) {
+    start = this.length - 1
+  }
+  if (start < 0) {
+    start = this.length + start;
+  }
+
+  for (var i = 0, walker = this.head; walker !== null && i < start; i++) {
+    walker = walker.next
+  }
+
+  var ret = []
+  for (var i = 0; walker && i < deleteCount; i++) {
+    ret.push(walker.value)
+    walker = this.removeNode(walker)
+  }
+  if (walker === null) {
+    walker = this.tail
+  }
+
+  if (walker !== this.head && walker !== this.tail) {
+    walker = walker.prev
+  }
+
+  for (var i = 0; i < nodes.length; i++) {
+    walker = insert(this, walker, nodes[i])
+  }
+  return ret;
+}
+
+Yallist.prototype.reverse = function () {
+  var head = this.head
+  var tail = this.tail
+  for (var walker = head; walker !== null; walker = walker.prev) {
+    var p = walker.prev
+    walker.prev = walker.next
+    walker.next = p
+  }
+  this.head = tail
+  this.tail = head
+  return this
+}
+
+function insert (self, node, value) {
+  var inserted = node === self.head ?
+    new Node(value, null, node, self) :
+    new Node(value, node, node.next, self)
+
+  if (inserted.next === null) {
+    self.tail = inserted
+  }
+  if (inserted.prev === null) {
+    self.head = inserted
+  }
+
+  self.length++
+
+  return inserted
+}
+
+function push (self, item) {
+  self.tail = new Node(item, self.tail, null, self)
+  if (!self.head) {
+    self.head = self.tail
+  }
+  self.length++
+}
+
+function unshift (self, item) {
+  self.head = new Node(item, null, self.head, self)
+  if (!self.tail) {
+    self.tail = self.head
+  }
+  self.length++
+}
+
+function Node (value, prev, next, list) {
+  if (!(this instanceof Node)) {
+    return new Node(value, prev, next, list)
+  }
+
+  this.list = list
+  this.value = value
+
+  if (prev) {
+    prev.next = this
+    this.prev = prev
+  } else {
+    this.prev = null
+  }
+
+  if (next) {
+    next.prev = this
+    this.next = next
+  } else {
+    this.next = null
+  }
+}
+
+try {
+  // add if support for Symbol.iterator is present
+  require('./iterator.js')(Yallist)
+} catch (er) {}
+
+},{"./iterator.js":175}]},{},[3]);
