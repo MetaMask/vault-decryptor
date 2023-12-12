@@ -28,6 +28,11 @@ const FIXTURES = [
     mnemonic: 'speed accuse odor ordinary exercise truly outer mask arrest life sibling height',
     //passphrase: 'bG82kXdp3rNwJ3MCT3kLmLKFN',
   },
+  {
+    path: 'chrome-119.0.6045.199-macos-arm64/000006.log',
+    mnemonic: 'position ship hill notice replace truth science angle merit reunion direct steak',
+    passphrase: 'r!chSloth14',
+  }
 ]
 
 const VAULTS = [
