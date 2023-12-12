@@ -60,7 +60,21 @@ function extractVaultFromFile (data) {
       )
     }
   }
-  // attempt 4: chromium 000005.ldb on windows
+  {
+    // attempt 4: chromium 000006.log on MacOS
+    // this variant also contains a 'keyMetadata' key in the vault, which should be
+    // a nested object.
+    const matches = data.match(/KeyringController":(\{"vault":".*=\\"\}"\})/);
+    if (matches && matches.length) {
+      keyringControllerState = matches[1];
+      try {
+        return JSON.parse(JSON.parse(keyringControllerState).vault);
+      } catch (err) {
+        // Not valid JSON: continue
+      }
+    }
+  }
+  // attempt 5: chromium 000005.ldb on windows
   const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
   const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
   const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u

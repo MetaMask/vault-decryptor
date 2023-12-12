@@ -31,7 +31,7 @@
   "author": "Dan Finlay",
   "license": "ISC",
   "dependencies": {
-    "@metamask/browser-passworder": "^4.0.2",
+    "@metamask/browser-passworder": "^4.3.0",
     "ethereumjs-util": "^7.1.4",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",

@@ -1,5 +1,9 @@
-Object.defineProperty(globalThis, 'crypto', {
+Object.defineProperty(globalThis, "crypto", {
   value: {
-    subtle: require('crypto').subtle,
-  }
+    subtle: require("crypto").subtle,
+  },
+});
+
+Object.defineProperty(globalThis, "CryptoKey", {
+  value: require("crypto").webcrypto.CryptoKey,
 });
