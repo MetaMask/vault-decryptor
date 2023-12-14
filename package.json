@@ -33,7 +33,6 @@
   "dependencies": {
     "@metamask/browser-passworder": "^4.3.0",
     "ethereumjs-util": "^7.1.4",
-    "levelup": "^5.1.1",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-hyperscript": "^3.2.0",
