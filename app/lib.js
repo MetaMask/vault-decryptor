@@ -66,9 +66,8 @@ function extractVaultFromFile (data) {
     // a nested object.
     const matches = data.match(/KeyringController":(\{"vault":".*=\\"\}"\})/);
     if (matches && matches.length) {
-      keyringControllerState = matches[1];
       try {
-        return JSON.parse(JSON.parse(keyringControllerState).vault);
+        return JSON.parse(JSON.parse(matches[1]).vault);
       } catch (err) {
         // Not valid JSON: continue
       }
