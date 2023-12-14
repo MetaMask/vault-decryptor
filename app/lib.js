@@ -1,4 +1,5 @@
 const passworder = require('@metamask/browser-passworder')
+const levelup = require('levelup');
 
 // Deduplicates array with rudimentary non-recursive shallow comparison of keys
 function dedupe (arr) {
@@ -58,6 +59,15 @@ function extractVaultFromFile (data) {
           vaultBody
         )
       )
+    }
+  }
+  {
+    try {
+      const ldb = levelup(data);
+      const keyringControllerState = ldb.get('KeyringController');
+      return JSON.parse(keyringControllerState.vault);
+    } catch (e) {
+      // Not a valid LevelDB file: continue
     }
   }
   {
