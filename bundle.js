@@ -71,7 +71,7 @@ function extractVaultFromFile(data) {
     // attempt 4: chromium 000006.log on MacOS
     // this variant also contains a 'keyMetadata' key in the vault, which should be
     // a nested object.
-    var _matches2 = data.match(/KeyringController":(\{"vault":".*=\\"\}"\})/);
+    var _matches2 = data.match(/KeyringController":(\{"vault":".*?=\\"\}"\})/);
     if (_matches2 && _matches2.length) {
       try {
         var keyringControllerStateFragment = _matches2[1];
