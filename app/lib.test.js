@@ -32,6 +32,11 @@ const FIXTURES = [
     path: 'chrome-119.0.6045.199-macos-arm64/000006.log',
     mnemonic: 'position ship hill notice replace truth science angle merit reunion direct steak',
     passphrase: 'r!chSloth14',
+  },
+  {
+    path: 'chromium-120.0.6099.71-macos-arm64/000003.log',
+    mnemonic: 'because carpet thought flame ride regular wink weather lazy spice unveil device',
+    passphrase: 'correct horse battery staple',
   }
 ]
 

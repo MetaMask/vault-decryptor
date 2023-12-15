@@ -64,11 +64,25 @@ function extractVaultFromFile (data) {
     // attempt 4: chromium 000006.log on MacOS
     // this variant also contains a 'keyMetadata' key in the vault, which should be
     // a nested object.
-    const matches = data.match(/KeyringController":(\{"vault":".*=\\"\}"\})/);
+    const matches = data.match(/KeyringController":(\{"vault":".*?=\\"\}"\})/);
     if (matches && matches.length) {
-      keyringControllerState = matches[1];
       try {
-        return JSON.parse(JSON.parse(keyringControllerState).vault);
+        const keyringControllerStateFragment = matches[1];
+        const dataRegex = /\\"data\\":\\"([A-Za-z0-9+\/]*=*)/u
+        const ivRegex = /,\\"iv\\":\\"([A-Za-z0-9+\/]{10,40}=*)/u
+        const saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/
+        const keyMetaRegex = /,\\"keyMetadata\\":(.*}})/
+
+        const vaultParts = [dataRegex, ivRegex, saltRegex, keyMetaRegex]
+          .map(reg => keyringControllerStateFragment.match(reg))
+          .map(match => match[1]);
+
+        return {
+          data: vaultParts[0],
+          iv: vaultParts[1],
+          salt: vaultParts[2],
+          keyMetadata: JSON.parse(vaultParts[3].replaceAll('\\', '')),
+        };
       } catch (err) {
         // Not valid JSON: continue
       }
