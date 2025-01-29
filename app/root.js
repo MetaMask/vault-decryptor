@@ -42,7 +42,7 @@ AppRoot.prototype.render = function () {
         h('h1', `MetaMask Vault Decryptor`),
 
         h('a', {
-          href: 'https://metamask.zendesk.com/hc/en-us/articles/360018766351-How-to-use-the-Vault-Decryptor-with-the-MetaMask-Vault-Data',
+          href: 'https://support.metamask.io/configure/wallet/how-to-recover-your-secret-recovery-phrase/#vault-extraction-and-decryption-instructions',
           target: '_blank'
         }, 'How to use the Vault Decryptor with the MetaMask Vault Data'),
         h('br'),
