@@ -88,27 +88,64 @@ function extractVaultFromFile (data) {
       }
     }
   }
-  // attempt 5: chromium 000005.ldb on windows
-  const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
-  const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
-  const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
-  const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
-  const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
-  const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
-    .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
-    .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
-    .map(([d,i,s]) => ({
-      data: d[1],
-      iv: i[1],
-      salt: s[1],
-    })))
-  if (!vaults.length) {
+  {
+    // attempt 5: chromium 000005.ldb on windows
+    const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
+    const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
+    const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
+    const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
+    const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
+    const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
+      .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
+      .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
+      .map(([d,i,s]) => ({
+        data: d[1],
+        iv: i[1],
+        salt: s[1],
+      })))
+
+    if (vaults.length > 1) {
+      console.log('Found multiple vaults!', vaults)
+      return vaults[0]
+    }
+  }
+  {
+    // attempt 6: Corrupted LDB file without Keyring but with vault data
+    // Looking for the following pattern: :\"data_b64\",\"iv\":\"iv_b64\",\"keyMetadata\":{\"algorithm\":\"PBKDF2\",\"params\":{\"iterations\":10000}},\"salt\":\"salt_b64\"}"} 
+    const regex = /":\\"([^"]+)\",\\"iv\\":\\"([^"]+)\",\\"keyMetadata\\":(\{[\s\S]*?\}),\\"salt\\":\\"([^"]+)\\"/;
+    const match = data.match(regex);
+
+    if (match) {
+      // match[1] => data
+      // match[2] => iv
+      // match[3] => keyMetadata
+      // match[4] => salt
+
+      const dataBase64 = match[1];
+      const iv = match[2];
+      const keyMetadataRaw = match[3];
+      const salt = match[4];
+
+      const cleanedKeyMetadata = keyMetadataRaw.replace(/\\/g, '');
+      let keyMetadata;
+      try {
+        keyMetadata = JSON.parse(cleanedKeyMetadata);
+      } catch (err) {
+        console.error('Error converting keyMetadata:', err);
+        return null;
+      }
+
+      const vault = {
+        data: dataBase64,
+        iv,
+        keyMetadata,
+        salt,
+      };
+
+      return vault
+    } 
     return null
   }
-  if (vaults.length > 1) {
-    console.log('Found multiple vaults!', vaults)
-  }
-  return vaults[0]
 }
 
 
@@ -148,5 +185,3 @@ module.exports = {
   extractVaultFromFile,
   isVaultValid,
 }
-
-
