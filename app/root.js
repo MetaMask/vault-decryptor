@@ -139,7 +139,7 @@ AppRoot.prototype.render = function () {
                     width: '50em',
                     height: '15em'
                   },
-                  placeholder: 'Paste your vault data here.',
+                  placeholder: 'Paste your vault data here...\n\n{"data":"...","iv":"...","keyMetadata":{"algorithm":"PBKDF2","params":{"iterations":600000}},"salt":"..."}',
                   onChange: (event) => {
                     try {
                       const vaultData = JSON.parse(event.target.value)

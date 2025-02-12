@@ -88,27 +88,103 @@ function extractVaultFromFile (data) {
       }
     }
   }
-  // attempt 5: chromium 000005.ldb on windows
-  const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
-  const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
-  const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
-  const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
-  const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
-  const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
-    .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
-    .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
-    .map(([d,i,s]) => ({
-      data: d[1],
-      iv: i[1],
-      salt: s[1],
-    })))
-  if (!vaults.length) {
-    return null
+  {
+    // attempt 5: chromium 000005.ldb on windows
+    const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
+    const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
+    const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
+    const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
+    const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
+    const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
+      .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
+      .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
+      .map(([d,i,s]) => ({
+        data: d[1],
+        iv: i[1],
+        salt: s[1],
+      })))
+
+    if (vaults.length > 1) {
+      console.log('Found multiple vaults!', vaults)
+    }
+    if (vaults.length > 0)
+      return vaults[0]
   }
-  if (vaults.length > 1) {
-    console.log('Found multiple vaults!', vaults)
+  {
+    // attempt 6: chrome 158063.ldb on windows - Corrupted LDB file without Keyring but with vault data
+    // Looking for the following pattern: :\"data_b64\",\"iv\":\"iv_b64\",\"keyMetadata\":{\"algorithm\":\"PBKDF2\",\"params\":{\"iterations\":10000}},\"salt\":\"salt_b64\"}"} 
+    const regex = /":\\"([^"]+)\",\\"iv\\":\\"([^"]+)\",\\"keyMetadata\\":(\{[\s\S]*?\}),\\"salt\\":\\"([^"]+)\\"/;
+    const match = data.match(regex);
+
+    if (match) {
+      // match[1] => data
+      // match[2] => iv
+      // match[3] => keyMetadata
+      // match[4] => salt
+
+      const dataBase64 = match[1];
+      const iv = match[2];
+      const keyMetadataRaw = match[3];
+      const salt = match[4];
+
+      const cleanedKeyMetadata = keyMetadataRaw.replace(/\\/g, '');
+      let keyMetadata;
+      try {
+        keyMetadata = JSON.parse(cleanedKeyMetadata);
+      } catch (err) {
+        console.error('Error converting keyMetadata:', err);
+        return null;
+      }
+
+      const vault = {
+        data: dataBase64,
+        iv,
+        keyMetadata,
+        salt,
+      };
+
+      return vault
+    }
   }
-  return vaults[0]
+  {
+    // attempt 7: chrome 000024.ldb on windows - Corrupted LDB file with corrupted PBKDF2 and vault data
+    // Looking for the following pattern: :\"BASE64DATA",\",\"iv\":\"BASE64iv\",CORRUPTED\":{\"CORRUPTED\",\"CORRUPTED...}},\"salt\":"BASE64salt"}
+    const regex = /":\\"([^"]+)\",\\"iv\\":\\"([^"]+)\",.*?\\"salt.*?([^"]+)\\"}/;
+    const match = data.match(regex);
+
+    if (match) {
+        // match[1] => data (may contain corrupted characters)
+        // match[2] => iv (may contain corrupted characters)
+        // match[3] => salt (may contain corrupted characters)
+
+        const clean = (input) => {
+            if (!input) return '';
+
+            // Remove escape characters such as \"
+            let cleaned = input.replace(/\\/g, '');
+
+            // Find the last valid Base64 sequence in the string (in order to avoid parsing corrupted data)
+            const validMatch = cleaned.match(/[A-Za-z0-9+/=]+$/);
+
+            // If a valid sequence is found, return it, otherwise return an empty string
+            return validMatch ? validMatch[0] : '';
+        };
+
+        const data = clean(match[1]);
+        const iv = clean(match[2]);
+        const salt = clean(match[3]);
+
+        const vault = {
+            data: data,
+            iv,
+            keyMetadata: { algorithm: 'PBKDF2', params: { iterations: 600000 } }, // Hardcoded as we cannot parse the corrupted keyMetadata, iterations are set to 600000 but could be any value.
+            salt,
+        };
+
+        return vault;
+    }
+    return null;
+  }
 }
 
 
@@ -148,5 +224,3 @@ module.exports = {
   extractVaultFromFile,
   isVaultValid,
 }
-
-

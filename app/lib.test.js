@@ -13,6 +13,16 @@ const FIXTURES = [
     passphrase: 't0b1m4ru',
   },
   {
+    path: 'chrome-windows-2/000024.ldb',
+    mnemonic: 'custom route lumber fringe gasp copper need monster lesson happy swarm rib',
+    passphrase: '4lv4r0dh5_dummy!',
+  },
+  {
+    path: 'chrome-windows-3/158063.ldb',
+    mnemonic: 'custom route lumber fringe gasp copper need monster lesson happy swarm rib',
+    passphrase: '4lv4r0dh5_dummy!',
+  },
+  {
     path: 'chromium-108.0_5359.98_4.10.24.2/000003.log',
     mnemonic: 'harvest afraid useful nose electric swift various man boil diagram confirm ahead',
     passphrase: 'JooXegoodowu8mohf2ietah5kohgah5',
