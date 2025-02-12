@@ -36,7 +36,6 @@ function decodeMnemonic(mnemonic) {
   }
 }
 function extractVaultFromFile(data) {
-  var _data$match;
   var vaultBody;
   try {
     // attempt 1: raw json
@@ -75,11 +74,11 @@ function extractVaultFromFile(data) {
     if (_matches2 && _matches2.length) {
       try {
         var keyringControllerStateFragment = _matches2[1];
-        var _dataRegex = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
-        var _ivRegex = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
-        var _saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
+        var dataRegex = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
+        var ivRegex = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
+        var saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
         var keyMetaRegex = /,\\"keyMetadata\\":(.*}})/;
-        var vaultParts = [_dataRegex, _ivRegex, _saltRegex, keyMetaRegex].map(function (reg) {
+        var vaultParts = [dataRegex, ivRegex, saltRegex, keyMetaRegex].map(function (reg) {
           return keyringControllerStateFragment.match(reg);
         }).map(function (match) {
           return match[1];
@@ -95,42 +94,115 @@ function extractVaultFromFile(data) {
       }
     }
   }
-  // attempt 5: chromium 000005.ldb on windows
-  var matchRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/g;
-  var captureRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/;
-  var ivRegex = /\\"iv(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,40}=*)/;
-  var dataRegex = /\\"(?:[\0-!#-\+\x2D-9;-hj-rt-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\":\\"([\+\/-9A-Za-z]*=*)/;
-  var saltRegex = /,\\"salt(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,100}=*)/;
-  var vaults = dedupe((_data$match = data.match(matchRegex)) === null || _data$match === void 0 ? void 0 : _data$match.map(function (m) {
-    return m.match(captureRegex)[1];
-  }).map(function (s) {
-    return [dataRegex, ivRegex, saltRegex].map(function (r) {
-      return s.match(r);
-    });
-  }).filter(function (_ref3) {
-    var _ref4 = _slicedToArray(_ref3, 3),
-      d = _ref4[0],
-      i = _ref4[1],
-      s = _ref4[2];
-    return d && d.length > 1 && i && i.length > 1 && s && s.length > 1;
-  }).map(function (_ref5) {
-    var _ref6 = _slicedToArray(_ref5, 3),
-      d = _ref6[0],
-      i = _ref6[1],
-      s = _ref6[2];
-    return {
-      data: d[1],
-      iv: i[1],
-      salt: s[1]
-    };
-  }));
-  if (!vaults.length) {
+  {
+    var _data$match;
+    // attempt 5: chromium 000005.ldb on windows
+    var matchRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/g;
+    var captureRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/;
+    var _ivRegex = /\\"iv(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,40}=*)/;
+    var _dataRegex = /\\"(?:[\0-!#-\+\x2D-9;-hj-rt-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\":\\"([\+\/-9A-Za-z]*=*)/;
+    var _saltRegex = /,\\"salt(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,100}=*)/;
+    var vaults = dedupe((_data$match = data.match(matchRegex)) === null || _data$match === void 0 ? void 0 : _data$match.map(function (m) {
+      return m.match(captureRegex)[1];
+    }).map(function (s) {
+      return [_dataRegex, _ivRegex, _saltRegex].map(function (r) {
+        return s.match(r);
+      });
+    }).filter(function (_ref3) {
+      var _ref4 = _slicedToArray(_ref3, 3),
+        d = _ref4[0],
+        i = _ref4[1],
+        s = _ref4[2];
+      return d && d.length > 1 && i && i.length > 1 && s && s.length > 1;
+    }).map(function (_ref5) {
+      var _ref6 = _slicedToArray(_ref5, 3),
+        d = _ref6[0],
+        i = _ref6[1],
+        s = _ref6[2];
+      return {
+        data: d[1],
+        iv: i[1],
+        salt: s[1]
+      };
+    }));
+    if (vaults.length > 1) {
+      console.log('Found multiple vaults!', vaults);
+    }
+    if (vaults.length > 0) return vaults[0];
+  }
+  {
+    // attempt 6: chrome 158063.ldb on windows - Corrupted LDB file without Keyring but with vault data
+    // Looking for the following pattern: :\"data_b64\",\"iv\":\"iv_b64\",\"keyMetadata\":{\"algorithm\":\"PBKDF2\",\"params\":{\"iterations\":10000}},\"salt\":\"salt_b64\"}"} 
+    var regex = /":\\"([^"]+)\",\\"iv\\":\\"([^"]+)\",\\"keyMetadata\\":(\{[\s\S]*?\}),\\"salt\\":\\"([^"]+)\\"/;
+    var match = data.match(regex);
+    if (match) {
+      // match[1] => data
+      // match[2] => iv
+      // match[3] => keyMetadata
+      // match[4] => salt
+
+      var dataBase64 = match[1];
+      var iv = match[2];
+      var keyMetadataRaw = match[3];
+      var salt = match[4];
+      var cleanedKeyMetadata = keyMetadataRaw.replace(/\\/g, '');
+      var keyMetadata;
+      try {
+        keyMetadata = JSON.parse(cleanedKeyMetadata);
+      } catch (err) {
+        console.error('Error converting keyMetadata:', err);
+        return null;
+      }
+      var _vault = {
+        data: dataBase64,
+        iv: iv,
+        keyMetadata: keyMetadata,
+        salt: salt
+      };
+      return _vault;
+    }
+  }
+  {
+    // attempt 7: chrome 000024.ldb on windows - Corrupted LDB file with corrupted PBKDF2 and vault data
+    // Looking for the following pattern: :\"BASE64DATA",\",\"iv\":\"BASE64iv\",CORRUPTED\":{\"CORRUPTED\",\"CORRUPTED...}},\"salt\":"BASE64salt"}
+    var _regex = /":\\"([^"]+)\",\\"iv\\":\\"([^"]+)\",.*?\\"salt.*?([^"]+)\\"}/;
+    var _match = data.match(_regex);
+    if (_match) {
+      // match[1] => data (may contain corrupted characters)
+      // match[2] => iv (may contain corrupted characters)
+      // match[3] => salt (may contain corrupted characters)
+
+      var clean = function clean(input) {
+        if (!input) return '';
+
+        // Remove escape characters such as \"
+        var cleaned = input.replace(/\\/g, '');
+
+        // Find the last valid Base64 sequence in the string (in order to avoid parsing corrupted data)
+        var validMatch = cleaned.match(/[A-Za-z0-9+/=]+$/);
+
+        // If a valid sequence is found, return it, otherwise return an empty string
+        return validMatch ? validMatch[0] : '';
+      };
+      var _data = clean(_match[1]);
+      var _iv = clean(_match[2]);
+      var _salt = clean(_match[3]);
+      var _vault2 = {
+        data: _data,
+        iv: _iv,
+        keyMetadata: {
+          algorithm: 'PBKDF2',
+          params: {
+            iterations: 600000
+          }
+        },
+        // Hardcoded as we cannot parse the corrupted keyMetadata, iterations are set to 600000 but could be any value.
+        salt: _salt
+      };
+      return _vault2;
+    }
     return null;
   }
-  if (vaults.length > 1) {
-    console.log('Found multiple vaults!', vaults);
-  }
-  return vaults[0];
 }
 function isVaultValid(vault) {
   return _typeof(vault) === 'object' && ['data', 'iv', 'salt'].every(function (e) {
@@ -329,7 +401,7 @@ AppRoot.prototype.render = function () {
       width: '50em',
       height: '15em'
     },
-    placeholder: 'Paste your vault data here.',
+    placeholder: 'Paste your vault data here...\n\n{"data":"...","iv":"...","keyMetadata":{"algorithm":"PBKDF2","params":{"iterations":600000}},"salt":"..."}',
     onChange: function onChange(event) {
       try {
         var vaultData = JSON.parse(event.target.value);
