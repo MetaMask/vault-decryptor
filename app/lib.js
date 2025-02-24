@@ -88,7 +88,35 @@ function extractVaultFromFile (data) {
       }
     }
   }
-  // attempt 5: chromium 000005.ldb on windows
+  {
+    // attempt 5: chromium 0000056.log on MacOS
+    // This variant is very similar to attempt 4 but there is the addition of a new metadata field, keyringsMetadata, in the vault.
+    const matches = data.match(/"KeyringController":\{.*?"vault":"({.*})"},/);
+    if (matches && matches.length) {
+      try {
+        const keyringControllerStateFragment = matches[1];
+        const dataRegex = /\\"data\\":\\"([A-Za-z0-9+\/]*=*)/u;
+        const ivRegex = /,\\"iv\\":\\"([A-Za-z0-9+\/]{10,40}=*)/u;
+        const saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
+        const keyMetaRegex = /,\\"keyMetadata\\":(.*}})/;
+
+        const vaultParts = [dataRegex, ivRegex, saltRegex, keyMetaRegex]
+          .map((reg) => keyringControllerStateFragment.match(reg))
+          .map((match) => match[1]);
+
+        return {
+          data: vaultParts[0],
+          iv: vaultParts[1],
+          salt: vaultParts[2],
+          keyMetadata: JSON.parse(vaultParts[3].replaceAll("\\", "")),
+        };
+      } catch (err) {
+        // Not valid JSON: continue
+      }
+    }
+  }
+
+  // attempt 6: chromium 000005.ldb on windows
   const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
   const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
   const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
