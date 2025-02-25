@@ -37,7 +37,13 @@ const FIXTURES = [
     path: 'chromium-120.0.6099.71-macos-arm64/000003.log',
     mnemonic: 'because carpet thought flame ride regular wink weather lazy spice unveil device',
     passphrase: 'correct horse battery staple',
-  }
+  },
+  {
+    path: 'chrome-133.0.6943.127-macos-arm64/000052.log',
+    mnemonic:
+      'slight escape bracket joy globe bring teach exact mango mansion injury category',
+    passphrase: 'password',
+  },
 ]
 
 const VAULTS = [

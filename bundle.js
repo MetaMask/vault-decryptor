@@ -95,7 +95,35 @@ function extractVaultFromFile(data) {
       }
     }
   }
-  // attempt 5: chromium 000005.ldb on windows
+  {
+    // attempt 5: chromium 0000056.log on MacOS
+    // This variant is very similar to attempt 4 but there is the addition of a new metadata field, keyringsMetadata, in the vault.
+    var _matches3 = data.match(/"KeyringController":\{.*?"vault":"({.*})"},/);
+    if (_matches3 && _matches3.length) {
+      try {
+        var _keyringControllerStateFragment = _matches3[1];
+        var _dataRegex2 = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
+        var _ivRegex2 = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
+        var _saltRegex2 = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
+        var _keyMetaRegex = /,\\"keyMetadata\\":(.*}})/;
+        var _vaultParts = [_dataRegex2, _ivRegex2, _saltRegex2, _keyMetaRegex].map(function (reg) {
+          return _keyringControllerStateFragment.match(reg);
+        }).map(function (match) {
+          return match[1];
+        });
+        return {
+          data: _vaultParts[0],
+          iv: _vaultParts[1],
+          salt: _vaultParts[2],
+          keyMetadata: JSON.parse(_vaultParts[3].replaceAll("\\", ""))
+        };
+      } catch (err) {
+        // Not valid JSON: continue
+      }
+    }
+  }
+
+  // attempt 6: chromium 000005.ldb on windows
   var matchRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/g;
   var captureRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/;
   var ivRegex = /\\"iv(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,40}=*)/;
