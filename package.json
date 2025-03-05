@@ -30,6 +30,9 @@
   },
   "author": "Dan Finlay",
   "license": "ISC",
+  "resolutions": {
+    "elliptic": "^6.6.1"
+  },
   "dependencies": {
     "@metamask/browser-passworder": "^4.3.0",
     "ethereumjs-util": "^7.1.4",
