@@ -45,7 +45,7 @@ const FIXTURES = [
     passphrase: 'password',
   },
   {
-    path: 'chromium-133-ubuntu/000003.log',
+    path: 'chromium-134-ubuntu/000003.log',
     mnemonic:
       'live pupil slab senior boy release lyrics shaft lazy renew potato simple',
     passphrase: 'correct horse battery staple',
