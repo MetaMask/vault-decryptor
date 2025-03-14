@@ -44,6 +44,12 @@ const FIXTURES = [
       'slight escape bracket joy globe bring teach exact mango mansion injury category',
     passphrase: 'password',
   },
+  {
+    path: 'chromium-134-ubuntu/000003.log',
+    mnemonic:
+      'live pupil slab senior boy release lyrics shaft lazy renew potato simple',
+    passphrase: 'correct horse battery staple',
+  },
 ]
 
 const VAULTS = [

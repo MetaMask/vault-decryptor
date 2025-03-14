@@ -98,7 +98,7 @@ function extractVaultFromFile(data) {
   {
     // attempt 5: chromium 0000056.log on MacOS
     // This variant is very similar to attempt 4 but there is the addition of a new metadata field, keyringsMetadata, in the vault.
-    var _matches3 = data.match(/"KeyringController":\{.*?"vault":"({.*})"},/);
+    var _matches3 = data.match(/"KeyringController":(\{.*?"vault":".*?=\\"\}"\})/);
     if (_matches3 && _matches3.length) {
       try {
         var _keyringControllerStateFragment = _matches3[1];
