@@ -116,7 +116,36 @@ function extractVaultFromFile (data) {
     }
   }
 
-  // attempt 6: chromium 000005.ldb on windows
+  // attemp 6: When the backup file is not a valid json, it tries to extract the keyring controller object from the string.
+  {
+    const matches = data.match(
+      /(?<="KeyringController":)(.*?)(?=,"[a-zA-z]+":{)/
+    );
+    if (matches && matches.length) {
+      try {
+        const keyringControllerStateFragment = matches[1];
+        const dataRegex = /\\"data\\":\\"([A-Za-z0-9+\/]*=*)/u;
+        const ivRegex = /,\\"iv\\":\\"([A-Za-z0-9+\/]{10,40}=*)/u;
+        const saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
+        const keyMetaRegex = /,\\"keyMetadata\\":(.*}})/;
+
+        const vaultParts = [dataRegex, ivRegex, saltRegex, keyMetaRegex]
+          .map((reg) => keyringControllerStateFragment.match(reg))
+          .map((match) => match[1]);
+
+        return {
+          data: vaultParts[0],
+          iv: vaultParts[1],
+          salt: vaultParts[2],
+          keyMetadata: JSON.parse(vaultParts[3].replaceAll("\\", "")),
+        };
+      } catch (err) {
+        // Not valid JSON: continue
+      }
+    }
+  }
+
+  // attempt 7: chromium 000005.ldb on windows
   const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
   const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
   const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
