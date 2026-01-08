@@ -1,9 +1,11 @@
 {
   "name": "@metamask/vault-decryptor",
   "version": "1.0.0",
-  "private": true,
   "description": "Utility for decrypting MetaMask vault data",
   "main": "index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "start": "beefy index.js:bundle.js --live --open",
     "test": "jest && jest-it-up",
@@ -72,5 +74,9 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "packageManager": "yarn@3.4.1"
+  "packageManager": "yarn@3.4.1",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }
