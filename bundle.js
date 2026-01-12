@@ -153,6 +153,7 @@ function extractVaultFromFile(data) {
       };
     }));
     if (vaults.length) {
+      /* istanbul ignore next */
       if (vaults.length > 1) {
         console.log('Found multiple vaults!', vaults);
       }
@@ -160,7 +161,7 @@ function extractVaultFromFile(data) {
     }
   }
   {
-    // attempt 7: log file using split state format
+    // attempt 7: log file using split state format, chromium 000004.log on windows-2
     var vaultRegex = /KeyringController[\s\S]*?"vault":"((?:[^"\\]|\\.)*)"/g;
     var _vaults = [];
     var match;
@@ -174,6 +175,7 @@ function extractVaultFromFile(data) {
     }
     var dedupedVaults = dedupe(_vaults);
     if (dedupedVaults.length) {
+      /* istanbul ignore next */
       if (dedupedVaults.length > 1) {
         console.log('Found multiple vaults!', dedupedVaults);
       }
