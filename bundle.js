@@ -36,7 +36,6 @@ function decodeMnemonic(mnemonic) {
   }
 }
 function extractVaultFromFile(data) {
-  var _data$match;
   var vaultBody;
   try {
     // attempt 1: raw json
@@ -75,11 +74,11 @@ function extractVaultFromFile(data) {
     if (_matches2 && _matches2.length) {
       try {
         var keyringControllerStateFragment = _matches2[1];
-        var _dataRegex = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
-        var _ivRegex = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
-        var _saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
+        var dataRegex = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
+        var ivRegex = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
+        var saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
         var keyMetaRegex = /,\\"keyMetadata\\":(.*}})/;
-        var vaultParts = [_dataRegex, _ivRegex, _saltRegex, keyMetaRegex].map(function (reg) {
+        var vaultParts = [dataRegex, ivRegex, saltRegex, keyMetaRegex].map(function (reg) {
           return keyringControllerStateFragment.match(reg);
         }).map(function (match) {
           return match[1];
@@ -102,11 +101,11 @@ function extractVaultFromFile(data) {
     if (_matches3 && _matches3.length) {
       try {
         var _keyringControllerStateFragment = _matches3[1];
-        var _dataRegex2 = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
-        var _ivRegex2 = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
-        var _saltRegex2 = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
+        var _dataRegex = /\\"data\\":\\"([\+\/-9A-Za-z]*=*)/;
+        var _ivRegex = /,\\"iv\\":\\"([\+\/-9A-Za-z]{10,40}=*)/;
+        var _saltRegex = /,\\"salt\\":\\"([A-Za-z0-9+\/]{10,100}=*)\\"/;
         var _keyMetaRegex = /,\\"keyMetadata\\":(.*}})/;
-        var _vaultParts = [_dataRegex2, _ivRegex2, _saltRegex2, _keyMetaRegex].map(function (reg) {
+        var _vaultParts = [_dataRegex, _ivRegex, _saltRegex, _keyMetaRegex].map(function (reg) {
           return _keyringControllerStateFragment.match(reg);
         }).map(function (match) {
           return match[1];
@@ -122,43 +121,66 @@ function extractVaultFromFile(data) {
       }
     }
   }
-
-  // attempt 6: chromium 000005.ldb on windows
-  var matchRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/g;
-  var captureRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/;
-  var ivRegex = /\\"iv(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,40}=*)/;
-  var dataRegex = /\\"(?:[\0-!#-\+\x2D-9;-hj-rt-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\":\\"([\+\/-9A-Za-z]*=*)/;
-  var saltRegex = /,\\"salt(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,100}=*)/;
-  var vaults = dedupe((_data$match = data.match(matchRegex)) === null || _data$match === void 0 ? void 0 : _data$match.map(function (m) {
-    return m.match(captureRegex)[1];
-  }).map(function (s) {
-    return [dataRegex, ivRegex, saltRegex].map(function (r) {
-      return s.match(r);
-    });
-  }).filter(function (_ref3) {
-    var _ref4 = _slicedToArray(_ref3, 3),
-      d = _ref4[0],
-      i = _ref4[1],
-      s = _ref4[2];
-    return d && d.length > 1 && i && i.length > 1 && s && s.length > 1;
-  }).map(function (_ref5) {
-    var _ref6 = _slicedToArray(_ref5, 3),
-      d = _ref6[0],
-      i = _ref6[1],
-      s = _ref6[2];
-    return {
-      data: d[1],
-      iv: i[1],
-      salt: s[1]
-    };
-  }));
-  if (!vaults.length) {
-    return null;
+  {
+    var _data$match;
+    // attempt 6: chromium 000005.ldb on windows
+    var matchRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/g;
+    var captureRegex = /Keyring[0-9](?:[\0-\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*(\{(?:[\0-z\|~-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\"\})/;
+    var _ivRegex2 = /\\"iv(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,40}=*)/;
+    var _dataRegex2 = /\\"(?:[\0-!#-\+\x2D-9;-hj-rt-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])*\\":\\"([\+\/-9A-Za-z]*=*)/;
+    var _saltRegex2 = /,\\"salt(?:[\0-\t\x0B\f\x0E-\u2027\u202A-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,4}(?:[\0-\*,-\.:-@\[-`\{-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]){1,10}([\+\/-9A-Za-z]{10,100}=*)/;
+    var vaults = dedupe((_data$match = data.match(matchRegex)) === null || _data$match === void 0 ? void 0 : _data$match.map(function (m) {
+      return m.match(captureRegex)[1];
+    }).map(function (s) {
+      return [_dataRegex2, _ivRegex2, _saltRegex2].map(function (r) {
+        return s.match(r);
+      });
+    }).filter(function (_ref3) {
+      var _ref4 = _slicedToArray(_ref3, 3),
+        d = _ref4[0],
+        i = _ref4[1],
+        s = _ref4[2];
+      return d && d.length > 1 && i && i.length > 1 && s && s.length > 1;
+    }).map(function (_ref5) {
+      var _ref6 = _slicedToArray(_ref5, 3),
+        d = _ref6[0],
+        i = _ref6[1],
+        s = _ref6[2];
+      return {
+        data: d[1],
+        iv: i[1],
+        salt: s[1]
+      };
+    }));
+    if (vaults.length) {
+      if (vaults.length > 1) {
+        console.log('Found multiple vaults!', vaults);
+      }
+      return vaults[0];
+    }
   }
-  if (vaults.length > 1) {
-    console.log('Found multiple vaults!', vaults);
+  {
+    // attempt 7: log file using split state format
+    var vaultRegex = /KeyringController[\s\S]*?"vault":"((?:[^"\\]|\\.)*)"/g;
+    var _vaults = [];
+    var match;
+    while ((match = vaultRegex.exec(data)) !== null) {
+      try {
+        var vaultString = JSON.parse("\"".concat(match[1], "\""));
+        _vaults.push(JSON.parse(vaultString));
+      } catch (err) {
+        // Not valid JSON: continue
+      }
+    }
+    var dedupedVaults = dedupe(_vaults);
+    if (dedupedVaults.length) {
+      if (dedupedVaults.length > 1) {
+        console.log('Found multiple vaults!', dedupedVaults);
+      }
+      return dedupedVaults[0];
+    }
   }
-  return vaults[0];
+  return null;
 }
 function isVaultValid(vault) {
   return _typeof(vault) === 'object' && ['data', 'iv', 'salt'].every(function (e) {

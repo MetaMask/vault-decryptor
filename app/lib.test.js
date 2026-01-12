@@ -50,6 +50,11 @@ const FIXTURES = [
       'live pupil slab senior boy release lyrics shaft lazy renew potato simple',
     passphrase: 'correct horse battery staple',
   },
+  {
+    path: 'chrome-windows-2/000004.log',
+    mnemonic: 'please injury labor shift much city general enemy vivid bench pottery picture',
+    passphrase: 'correct horse battery staple',
+  },
 ]
 
 const VAULTS = [
