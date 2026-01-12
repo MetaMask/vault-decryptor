@@ -132,6 +132,7 @@ function extractVaultFromFile (data) {
         salt: s[1],
       })))
     if (vaults.length) {
+      /* istanbul ignore next */
       if (vaults.length > 1) {
         console.log('Found multiple vaults!', vaults)
       }
@@ -155,6 +156,7 @@ function extractVaultFromFile (data) {
 
     const dedupedVaults = dedupe(vaults)
     if (dedupedVaults.length) {
+      /* istanbul ignore next */
       if (dedupedVaults.length > 1) {
         console.log('Found multiple vaults!', dedupedVaults)
       }
