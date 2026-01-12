@@ -4,7 +4,8 @@
   "description": "Utility for decrypting MetaMask vault data",
   "main": "index.js",
   "files": [
-    "dist"
+    "index.html",
+    "bundle.js"
   ],
   "scripts": {
     "start": "beefy index.js:bundle.js --live --open",
