@@ -168,7 +168,10 @@ function extractVaultFromFile(data) {
     while ((match = vaultRegex.exec(data)) !== null) {
       try {
         var vaultString = JSON.parse("\"".concat(match[1], "\""));
-        _vaults.push(JSON.parse(vaultString));
+        var json = JSON.parse(vaultString);
+        if (json !== null) {
+          _vaults.push(json);
+        }
       } catch (err) {
         // Not valid JSON: continue
       }
