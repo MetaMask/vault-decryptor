@@ -4,6 +4,9 @@ const passworder = require('@metamask/browser-passworder')
 function dedupe (arr) {
   const result = []
   arr?.forEach(x => {
+    if (x == null) {
+      return
+    }
     if (!result.find(y => Object.keys(x).length === Object.keys(y).length && Object.entries(x).every(([k,ex]) => y[k] === ex ))) {
       result.push(x)
     }
@@ -149,9 +152,7 @@ function extractVaultFromFile (data) {
       try {
         const vaultString = JSON.parse(`"${match[1]}"`)
         const json = JSON.parse(vaultString)
-        if (json !== null) {
-          vaults.push(json)
-        }
+        vaults.push(json)
       } catch (err) {
         // Not valid JSON: continue
       }
