@@ -4,6 +4,9 @@ const passworder = require('@metamask/browser-passworder')
 function dedupe (arr) {
   const result = []
   arr?.forEach(x => {
+    if (x == null) {
+      return
+    }
     if (!result.find(y => Object.keys(x).length === Object.keys(y).length && Object.entries(x).every(([k,ex]) => y[k] === ex ))) {
       result.push(x)
     }
@@ -116,27 +119,55 @@ function extractVaultFromFile (data) {
     }
   }
 
-  // attempt 6: chromium 000005.ldb on windows
-  const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
-  const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
-  const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
-  const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
-  const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
-  const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
-    .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
-    .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
-    .map(([d,i,s]) => ({
-      data: d[1],
-      iv: i[1],
-      salt: s[1],
-    })))
-  if (!vaults.length) {
-    return null
+  {
+    // attempt 6: chromium 000005.ldb on windows
+    const matchRegex = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/gu
+    const captureRegex  = /Keyring[0-9][^\}]*(\{[^\{\}]*\\"\})/u
+    const ivRegex = /\\"iv.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,40}=*)/u
+    const dataRegex = /\\"[^":,is]*\\":\\"([A-Za-z0-9+\/]*=*)/u
+    const saltRegex = /,\\"salt.{1,4}[^A-Za-z0-9+\/]{1,10}([A-Za-z0-9+\/]{10,100}=*)/u
+    const vaults = dedupe(data.match(matchRegex)?.map(m => m.match(captureRegex)[1])
+      .map(s => [dataRegex, ivRegex, saltRegex].map(r => s.match(r)))
+      .filter(([d,i,s]) => d&&d.length>1 && i&&i.length>1 && s&&s.length>1)
+      .map(([d,i,s]) => ({
+        data: d[1],
+        iv: i[1],
+        salt: s[1],
+      })))
+    if (vaults.length) {
+      /* istanbul ignore next */
+      if (vaults.length > 1) {
+        console.log('Found multiple vaults!', vaults)
+      }
+      return vaults[0]
+    }
   }
-  if (vaults.length > 1) {
-    console.log('Found multiple vaults!', vaults)
+  {
+    // attempt 7: log file using split state format, chromium 000004.log on windows-2
+    const vaultRegex = /KeyringController[\s\S]*?"vault":"((?:[^"\\]|\\.)*)"/g
+    const vaults = []
+    let match
+
+    while ((match = vaultRegex.exec(data)) !== null) {
+      try {
+        const vaultString = JSON.parse(`"${match[1]}"`)
+        const json = JSON.parse(vaultString)
+        vaults.push(json)
+      } catch (err) {
+        // Not valid JSON: continue
+      }
+    }
+
+    const dedupedVaults = dedupe(vaults)
+    if (dedupedVaults.length) {
+      /* istanbul ignore next */
+      if (dedupedVaults.length > 1) {
+        console.log('Found multiple vaults!', dedupedVaults)
+      }
+      return dedupedVaults[0]
+    }
   }
-  return vaults[0]
+  return null
 }
 
 
@@ -176,5 +207,3 @@ module.exports = {
   extractVaultFromFile,
   isVaultValid,
 }
-
-
