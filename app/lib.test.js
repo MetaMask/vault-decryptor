@@ -50,6 +50,11 @@ const FIXTURES = [
       'live pupil slab senior boy release lyrics shaft lazy renew potato simple',
     passphrase: 'correct horse battery staple',
   },
+  {
+    path: 'chrome-windows-2/000004.log',
+    mnemonic: 'please injury labor shift much city general enemy vivid bench pottery picture',
+    passphrase: 'correct horse battery staple',
+  },
 ]
 
 const VAULTS = [
@@ -57,13 +62,13 @@ const VAULTS = [
     variant: 'vault with no key metadata',
     vaultData: '{"data":"s6TpYjlUNsn7ifhEFTkuDGBUM1GyOlPrim7JSjtfIxgTt8/6MiXgiR/CtFfR4dWW2xhq85/NGIBYEeWrZThGdKGarBzeIqBfLFhw9n509jprzJ0zc2Rf+9HVFGLw+xxC4xPxgCS0IIWeAJQ+XtGcHmn0UZXriXm8Ja4kdlow6SWinB7sr/WM3R0+frYs4WgllkwggDf2/Tv6VHygvLnhtzp6hIJFyTjh+l/KnyJTyZW1TkZhDaNDzX3SCOHT","iv":"FbeHDAW5afeWNORfNJBR0Q==","salt":"TxZ+WbCW6891C9LK/hbMAoUsSEW1E8pyGLVBU6x5KR8="}',
     mnemonic: 'spread raise short crane omit tent fringe mandate neglect detail suspect cradle',
-    passphrase: 'correct horse battery staple', 
+    passphrase: 'correct horse battery staple',
   },
   {
     variant: 'vault with key metadata and 600_000 iterations',
     vaultData: '{"data":"WHaP1FrrtV4zUonudIppDifsLHF39g6oPkVksAIdWAHBRzax1uy1asfAJprR7u72t4/HuYz5yPIFQrnNnv+hwQu9GRuty88VKMnvMy+sq8MNtoXI+C54bZpWa8r4iUQfa0Mj/cfJbpFpzOdF1ZYXahTfTcU5WsrHwvJew842CiJR4B2jmCHHXfm/DxLK3WazsVQwXJGx/U71UelGoOOrT8NI28EKrAwgPn+7Xmv0j92gmhau30N7Bo2fr6Zv","iv":"LfD8/tY1EjXzxuemSmDVdA==","keyMetadata":{"algorithm":"PBKDF2","params":{"iterations":600000}},"salt":"nk4xdpmMR+1s5BYe4Vnk++XAQwrISI2bCtbMg7V1wUA="}',
     mnemonic: 'spread raise short crane omit tent fringe mandate neglect detail suspect cradle',
-    passphrase: 'correct horse battery staple', 
+    passphrase: 'correct horse battery staple',
   },
 ]
 
@@ -88,7 +93,7 @@ describe('decryptVault', () => {
   VAULTS.forEach((vault) => {
     it(`decrypts ${vault.variant}`, async () => {
       const decrypted = await decryptVault(
-        vault.passphrase, 
+        vault.passphrase,
         JSON.parse(vault.vaultData)
       );
 
