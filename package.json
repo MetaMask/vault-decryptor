@@ -1,73 +1,53 @@
 {
-  "name": "@metamask/vault-decryptor",
-  "version": "1.0.0",
+  "name": "@rabby-wallet/vault-decryptor",
+  "version": "2.0.0",
   "private": true,
-  "description": "Utility for decrypting MetaMask vault data",
-  "main": "index.js",
+  "description": "Recover seed phrases and private keys from Rabby (and MetaMask) extension vault data",
+  "type": "module",
   "scripts": {
-    "start": "beefy index.js:bundle.js --live --open",
-    "test": "jest && jest-it-up",
-    "build": "browserify index.js -o bundle.js"
-  },
-  "browserify": {
-    "transform": [
-      [
-        "babelify",
-        {
-          "presets": [
-            [
-              "@babel/preset-env",
-              {
-                "useBuiltIns": "entry",
-                "corejs": "3.22"
-              }
-            ]
-          ]
-        }
-      ],
-      "brfs"
-    ]
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "author": "Dan Finlay",
   "license": "ISC",
   "dependencies": {
-    "@metamask/browser-passworder": "^4.3.0",
-    "ethereumjs-util": "^7.1.4",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
-    "react-hyperscript": "^3.2.0",
-    "react-redux": "^8.0.1",
-    "redux": "^4.2.0",
-    "redux-logger": "^3.0.6",
-    "redux-thunk": "^2.4.1",
-    "xtend": "^4.0.2"
+    "@noble/curves": "1.6.0",
+    "@noble/hashes": "1.5.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.6",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "@vitest/coverage-v8": "2.1.8",
+    "rollup": "4.27.4",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vite-plugin-singlefile": "2.0.3",
+    "vitest": "2.1.8"
   },
   "keywords": [
+    "rabby",
     "metamask",
     "vault-decryptor",
     "ethereum wallet"
   ],
-  "devDependencies": {
-    "@babel/preset-env": "^7.20.2",
-    "babelify": "^10.0.0",
-    "brfs": "^1.4.3",
-    "browserify": "^17.0.0",
-    "jest": "^29.4.1",
-    "jest-it-up": "^2.1.0"
-  },
-  "directories": {
-    "lib": "lib"
-  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MetaMask/vault-decryptor.git"
+    "url": "https://github.com/RabbyHub/vault-decryptor.git"
   },
   "bugs": {
-    "url": "https://github.com/MetaMask/vault-decryptor/issues"
+    "url": "https://github.com/RabbyHub/vault-decryptor/issues"
   },
-  "homepage": "https://github.com/MetaMask/vault-decryptor#readme",
+  "homepage": "https://github.com/RabbyHub/vault-decryptor#readme",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "packageManager": "yarn@3.4.1"
 }
